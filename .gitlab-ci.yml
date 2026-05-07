@@ -1,0 +1,114 @@
+# .gitlab-ci.yml – Alternative CI pipeline for GitLab
+image: python:3.12-slim
+
+variables:
+  PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
+
+cache:
+  paths:
+    - .cache/pip/
+
+stages:
+  - lint
+  - test
+  - build
+  - deploy
+
+# ── Templates ─────────────────────────────────────────────────────────────
+.install_deps: &install_deps
+  before_script:
+    - apt-get update -qq && apt-get install -y -qq xvfb libgl1 libglib2.0-0 libdbus-1-3
+    - pip install -r requirements-dev.txt
+
+# ── Lint stage ────────────────────────────────────────────────────────────
+lint:black:
+  stage: lint
+  <<: *install_deps
+  script:
+    - black --check --diff src/ tests/
+
+lint:isort:
+  stage: lint
+  <<: *install_deps
+  script:
+    - isort --check-only --diff src/ tests/
+
+lint:flake8:
+  stage: lint
+  <<: *install_deps
+  script:
+    - flake8 src/ tests/ --max-line-length=100 --extend-ignore=E203,W503
+
+lint:mypy:
+  stage: lint
+  <<: *install_deps
+  script:
+    - mypy src/ini_parser.py --ignore-missing-imports
+
+# ── Test stage ────────────────────────────────────────────────────────────
+test:py311:
+  stage: test
+  image: python:3.11-slim
+  <<: *install_deps
+  script:
+    - xvfb-run --auto-servernum pytest tests/ --cov=src --cov-report=xml -v
+  artifacts:
+    reports:
+      coverage_report:
+        coverage_format: cobertura
+        path: coverage.xml
+
+test:py312:
+  stage: test
+  image: python:3.12-slim
+  <<: *install_deps
+  script:
+    - xvfb-run --auto-servernum pytest tests/ --cov=src --cov-report=xml -v
+  coverage: '/TOTAL.*\s+(\d+%)$/'
+  artifacts:
+    reports:
+      coverage_report:
+        coverage_format: cobertura
+        path: coverage.xml
+
+# ── Build stage ───────────────────────────────────────────────────────────
+build:wheel:
+  stage: build
+  <<: *install_deps
+  script:
+    - pip install build
+    - python -m build
+    - ls -lh dist/
+  artifacts:
+    paths:
+      - dist/
+    expire_in: 1 week
+  only:
+    - main
+    - tags
+
+build:exe:
+  stage: build
+  <<: *install_deps
+  script:
+    - pip install pyinstaller
+    - xvfb-run --auto-servernum pyinstaller --onefile --windowed --add-data "src/logo.png:src" --name ini-file-editor main.py
+    - ls -lh dist/
+  artifacts:
+    paths:
+      - dist/ini-file-editor
+    expire_in: 1 month
+  only:
+    - tags
+
+# ── Deploy stage (PyPI) ───────────────────────────────────────────────────
+deploy:pypi:
+  stage: deploy
+  script:
+    - pip install twine
+    - TWINE_PASSWORD=${PYPI_TOKEN} TWINE_USERNAME=__token__ twine upload dist/*
+  dependencies:
+    - build:wheel
+  only:
+    - tags
+  when: manual

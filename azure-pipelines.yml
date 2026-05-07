@@ -1,0 +1,61 @@
+trigger:
+  - main
+
+pool:
+  vmImage: 'windows-latest'
+
+variables:
+  pythonVersion: '3.14'
+  PIP_CACHE_DIR: $(Pipeline.Workspace)/.pip
+
+stages:
+  - stage: Build
+    displayName: 'Build and Test'
+    jobs:
+      - job: BuildJob
+        displayName: 'Build ini-file-editor'
+        steps:
+          - task: UsePythonVersion@0
+            inputs:
+              versionSpec: '$(pythonVersion)'
+            displayName: 'Use Python $(pythonVersion)'
+
+          - task: Cache@2
+            inputs:
+              key: 'pip | "$(Agent.OS)" | requirements.txt'
+              restoreKeys: |
+                pip | "$(Agent.OS)"
+              path: $(PIP_CACHE_DIR)
+            displayName: 'Cache pip packages'
+
+          - script: |
+              python -m pip install --upgrade pip
+              pip install -r requirements.txt
+              pip install -r requirements-dev.txt
+            displayName: 'Install dependencies'
+
+          - script: |
+              pip install pytest
+              pytest tests/
+            displayName: 'Run tests'
+
+          - script: |
+              pip install pyinstaller
+              pyinstaller ini-file-editor.spec
+            displayName: 'Build executable with PyInstaller'
+
+          - task: PublishBuildArtifacts@1
+            inputs:
+              pathToPublish: '$(Build.SourcesDirectory)/dist'
+              artifactName: 'ini-file-editor-build'
+              publishLocation: 'Container'
+            displayName: 'Publish executable artifact'
+            condition: succeeded()
+
+          - task: PublishBuildArtifacts@1
+            inputs:
+              pathToPublish: '$(Build.SourcesDirectory)/build'
+              artifactName: 'ini-file-editor-build-files'
+              publishLocation: 'Container'
+            displayName: 'Publish build files'
+            condition: succeeded()

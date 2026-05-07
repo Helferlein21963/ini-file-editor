@@ -1,0 +1,56 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.backends.legacy:build"
+
+[project]
+name = "ini-file-editor"
+version = "1.0.0"
+description = "A comment-preserving INI editor with PyQt6 GUI and multi-format export"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+keywords = ["ini", "config", "editor", "pyqt6", "gui"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Environment :: X11 Applications :: Qt",
+    "Topic :: Utilities",
+]
+dependencies = [
+    "PyQt6>=6.6.0",
+    "PyYAML>=6.0",
+]
+
+[project.scripts]
+ini-file-editor = "main:main"
+
+[project.gui-scripts]
+ini-file-editor-gui = "main_window:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--tb=short -v"
+
+[tool.coverage.run]
+source = ["src"]
+omit = ["src/main_window.py"]   # GUI code skipped in headless CI
+
+[tool.black]
+line-length = 100
+target-version = ["py311", "py312"]
+
+[tool.isort]
+profile = "black"
+line_length = 100
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+ignore_missing_imports = true

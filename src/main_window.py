@@ -8,7 +8,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Optional
 
-from PyQt6.QtCore import Qt, QTimer, pyqtSignal
+from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import (
     QAction, QColor, QFont, QIcon, QKeySequence, QPalette, QPixmap,
     QTextCharFormat, QSyntaxHighlighter,
@@ -75,8 +75,11 @@ TRANSLATIONS = {
         "menu_view": "&Ansicht",
         "menu_help": "&Hilfe",
         "action_new": "&Neu",
+        "action_new_tab": "&Neuer Tab",
         "action_open": "📁 &Öffnen…",
+        "action_open_tab": "📁 In neuem Tab &öffnen…",
         "action_merge": "🔁 Mehrere Dateien zusammenführen…",
+        "action_close_tab": "Tab &schließen",
         "action_save": "💾 &Speichern",
         "action_save_as": "💾 Speichern &als…",
         "action_export": "⤵ &Exportieren…",
@@ -100,6 +103,7 @@ TRANSLATIONS = {
         "delete_entry_text": "Eintrag [{key}] wirklich löschen?",
         "confirm_discard_title": "Ungespeicherte Änderungen",
         "confirm_discard_text": "Es gibt ungespeicherte Änderungen. Wirklich fortfahren?",
+        "confirm_discard_all_text": "Mehrere Tabs haben ungespeicherte Änderungen. Trotzdem beenden?",
         "about_title": "Über {app}",
         "about_text": "<h3>{app}</h3><p>Ein kommentarerhaltender INI-Datei-Editor mit Export nach JSON, XML und YAML.</p><p>Entwickelt mit Python 3 und PyQt6.</p><p>Entwickelt von Thomas Reichenbach (Helferlein21963)</p>",
         "prompt_new_section": "Neuer Abschnitt",
@@ -126,6 +130,7 @@ TRANSLATIONS = {
         "find_replace_one": "Ersetzen",
         "find_replace_all": "Alle ersetzen",
         "find_replace_count": "{count} Einträge ersetzt",
+        "tab_untitled": "Unbenannt",
     },
     Language.EN: {
         "app_name": "ini-file-editor",
@@ -166,8 +171,11 @@ TRANSLATIONS = {
         "menu_view": "&View",
         "menu_help": "&Help",
         "action_new": "&New",
+        "action_new_tab": "&New tab",
         "action_open": "📁 &Open…",
+        "action_open_tab": "📁 Open in new &tab…",
         "action_merge": "🔁 Merge multiple files…",
+        "action_close_tab": "&Close tab",
         "action_save": "💾 &Save",
         "action_save_as": "💾 Save &as…",
         "action_export": "⤵ &Export…",
@@ -191,6 +199,7 @@ TRANSLATIONS = {
         "delete_entry_text": "Delete entry [{key}]?",
         "confirm_discard_title": "Unsaved changes",
         "confirm_discard_text": "There are unsaved changes. Continue anyway?",
+        "confirm_discard_all_text": "Multiple tabs have unsaved changes. Quit anyway?",
         "about_title": "About {app}",
         "about_text": "<h3>{app}</h3><p>A comment-preserving INI editor with export to JSON, XML, and YAML.</p><p>Built with Python 3 and PyQt6.</p><p>Developed by Thomas Reichenbach (Helferlein21963)</p>",
         "prompt_new_section": "New section",
@@ -217,6 +226,7 @@ TRANSLATIONS = {
         "find_replace_one": "Replace",
         "find_replace_all": "Replace all",
         "find_replace_count": "{count} entries replaced",
+        "tab_untitled": "Untitled",
     },
 }
 
@@ -373,7 +383,6 @@ class IniTreeWidget(QTreeWidget):
             self._t("tree_header_comment"),
         ])
 
-    # ── public ────────────────────────────────────────────────────────────
     def load_document(self, doc: IniDocument) -> None:
         self._doc = doc
         self._refresh()
@@ -403,9 +412,7 @@ class IniTreeWidget(QTreeWidget):
     def _style_section_item(self, item: QTreeWidgetItem, sec: IniSection) -> None:
         item.setText(0, f"[{sec.name}]")
         item.setText(1, "")
-        comment_text = " | ".join(
-            c for c in sec.preceding_comments if c.strip()
-        )
+        comment_text = " | ".join(c for c in sec.preceding_comments if c.strip())
         item.setText(2, comment_text)
         font = QFont()
         font.setBold(True)
@@ -423,29 +430,24 @@ class IniTreeWidget(QTreeWidget):
     def _value_color(self, value: str) -> QColor:
         raw = value.strip()
         normalized = raw.lower()
-
         if normalized in {"false", "0"}:
-            return QColor("#FF4B4B")  # rot
+            return QColor("#FF4B4B")
         if normalized in {"true", "1"}:
-            return QColor("#6CCC70")  # grün
-
+            return QColor("#6CCC70")
         try:
             int(raw)
         except ValueError:
             pass
         else:
-            return QColor("#4DD0E1")  # cyan
-
+            return QColor("#4DD0E1")
         try:
             float(raw)
         except ValueError:
             pass
         else:
-            return QColor("#B468C7")  # violett
+            return QColor("#B468C7")
+        return QColor("#D4840A")
 
-        return QColor("#D4840A")  # orange
-
-    # ── interactions ──────────────────────────────────────────────────────
     def _on_double_click(self, item: QTreeWidgetItem, _col: int) -> None:
         obj = item.data(0, Qt.ItemDataRole.UserRole)
         if isinstance(obj, IniSection):
@@ -456,7 +458,6 @@ class IniTreeWidget(QTreeWidget):
     def _context_menu(self, pos) -> None:
         item = self.itemAt(pos)
         menu = QMenu(self)
-
         if item is None:
             act_add_sec = menu.addAction(self._t("context_add_section"))
             act_add_sec.triggered.connect(self._add_section)
@@ -476,7 +477,6 @@ class IniTreeWidget(QTreeWidget):
                 menu.addSeparator()
                 act_del = menu.addAction(self._t("context_delete_entry"))
                 act_del.triggered.connect(lambda: self._delete_entry(item, obj))
-
         menu.exec(self.viewport().mapToGlobal(pos))
 
     def _edit_section(self, item: QTreeWidgetItem, sec: IniSection) -> None:
@@ -556,19 +556,17 @@ class IniTreeWidget(QTreeWidget):
 # Find dialog
 # ─────────────────────────────────────────────────────────────────────────────
 class FindDialog(QDialog):
-    """A modeless Find dialog"""
-    found = pyqtSignal(int)  # emits the number of matches found
-    
+    found = pyqtSignal(int)
+
     def __init__(self, language: Language, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self._language = language
         self.setWindowTitle(translate(language, "find_title"))
         self.setMinimumWidth(400)
         self.setWindowModality(Qt.WindowModality.NonModal)
-        
+
         layout = QVBoxLayout(self)
-        
-        # Search field
+
         search_layout = QHBoxLayout()
         self._search_label = QLabel(translate(language, "find_label"))
         self._search_edit = QLineEdit()
@@ -576,8 +574,7 @@ class FindDialog(QDialog):
         search_layout.addWidget(self._search_label)
         search_layout.addWidget(self._search_edit)
         layout.addLayout(search_layout)
-        
-        # Options
+
         options_layout = QHBoxLayout()
         self._case_check = QCheckBox(translate(language, "find_case_sensitive"))
         self._whole_words_check = QCheckBox(translate(language, "find_whole_words"))
@@ -585,8 +582,7 @@ class FindDialog(QDialog):
         options_layout.addWidget(self._whole_words_check)
         options_layout.addStretch()
         layout.addLayout(options_layout)
-        
-        # Buttons
+
         buttons_layout = QHBoxLayout()
         self._prev_btn = QPushButton(translate(language, "find_prev"))
         self._prev_btn.clicked.connect(self._find_prev)
@@ -599,13 +595,11 @@ class FindDialog(QDialog):
         buttons_layout.addStretch()
         buttons_layout.addWidget(self._close_btn)
         layout.addLayout(buttons_layout)
-        
-        # Status label
+
         self._status_label = QLabel("")
         layout.addWidget(self._status_label)
-    
+
     def set_language(self, language: Language) -> None:
-        """Update all text elements for the new language"""
         self._language = language
         self.setWindowTitle(translate(language, "find_title"))
         self._search_label.setText(translate(language, "find_label"))
@@ -613,25 +607,25 @@ class FindDialog(QDialog):
         self._whole_words_check.setText(translate(language, "find_whole_words"))
         self._prev_btn.setText(translate(language, "find_prev"))
         self._next_btn.setText(translate(language, "find_next"))
-    
+
     def get_search_text(self) -> str:
         return self._search_edit.text()
-    
+
     def is_case_sensitive(self) -> bool:
         return self._case_check.isChecked()
-    
+
     def is_whole_words(self) -> bool:
         return self._whole_words_check.isChecked()
-    
+
     def set_status(self, message: str) -> None:
         self._status_label.setText(message)
-    
+
     def _find_next(self) -> None:
-        pass  # Will be connected to MainWindow
-    
+        pass
+
     def _find_prev(self) -> None:
-        pass  # Will be connected to MainWindow
-    
+        pass
+
     def closeEvent(self, event) -> None:  # type: ignore[override]
         self._search_edit.clear()
         self._status_label.clear()
@@ -642,18 +636,15 @@ class FindDialog(QDialog):
 # Find & Replace dialog
 # ─────────────────────────────────────────────────────────────────────────────
 class FindReplaceDialog(QDialog):
-    """A modeless Find & Replace dialog"""
-    
     def __init__(self, language: Language, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self._language = language
         self.setWindowTitle(translate(language, "find_replace_title"))
         self.setMinimumWidth(450)
         self.setWindowModality(Qt.WindowModality.NonModal)
-        
+
         layout = QVBoxLayout(self)
-        
-        # Search field
+
         search_layout = QHBoxLayout()
         self._search_label = QLabel(translate(language, "find_label"))
         self._search_edit = QLineEdit()
@@ -661,8 +652,7 @@ class FindReplaceDialog(QDialog):
         search_layout.addWidget(self._search_label)
         search_layout.addWidget(self._search_edit)
         layout.addLayout(search_layout)
-        
-        # Replace field
+
         replace_layout = QHBoxLayout()
         self._replace_label = QLabel(translate(language, "find_replace_label"))
         self._replace_edit = QLineEdit()
@@ -670,8 +660,7 @@ class FindReplaceDialog(QDialog):
         replace_layout.addWidget(self._replace_label)
         replace_layout.addWidget(self._replace_edit)
         layout.addLayout(replace_layout)
-        
-        # Options
+
         options_layout = QHBoxLayout()
         self._case_check = QCheckBox(translate(language, "find_case_sensitive"))
         self._whole_words_check = QCheckBox(translate(language, "find_whole_words"))
@@ -679,8 +668,7 @@ class FindReplaceDialog(QDialog):
         options_layout.addWidget(self._whole_words_check)
         options_layout.addStretch()
         layout.addLayout(options_layout)
-        
-        # Buttons
+
         buttons_layout = QHBoxLayout()
         self._prev_btn = QPushButton(translate(language, "find_prev"))
         self._prev_btn.clicked.connect(self._find_prev)
@@ -699,13 +687,11 @@ class FindReplaceDialog(QDialog):
         buttons_layout.addStretch()
         buttons_layout.addWidget(self._close_btn)
         layout.addLayout(buttons_layout)
-        
-        # Status label
+
         self._status_label = QLabel("")
         layout.addWidget(self._status_label)
-    
+
     def set_language(self, language: Language) -> None:
-        """Update all text elements for the new language"""
         self._language = language
         self.setWindowTitle(translate(language, "find_replace_title"))
         self._search_label.setText(translate(language, "find_label"))
@@ -716,39 +702,347 @@ class FindReplaceDialog(QDialog):
         self._next_btn.setText(translate(language, "find_next"))
         self._replace_btn.setText(translate(language, "find_replace_one"))
         self._replace_all_btn.setText(translate(language, "find_replace_all"))
-    
+
     def get_search_text(self) -> str:
         return self._search_edit.text()
-    
+
     def get_replace_text(self) -> str:
         return self._replace_edit.text()
-    
+
     def is_case_sensitive(self) -> bool:
         return self._case_check.isChecked()
-    
+
     def is_whole_words(self) -> bool:
         return self._whole_words_check.isChecked()
-    
+
     def set_status(self, message: str) -> None:
         self._status_label.setText(message)
-    
+
     def _find_next(self) -> None:
-        pass  # Will be connected to MainWindow
-    
+        pass
+
     def _find_prev(self) -> None:
-        pass  # Will be connected to MainWindow
-    
+        pass
+
     def _replace_next(self) -> None:
-        pass  # Will be connected to MainWindow
-    
+        pass
+
     def _replace_all(self) -> None:
-        pass  # Will be connected to MainWindow
-    
+        pass
+
     def closeEvent(self, event) -> None:  # type: ignore[override]
         self._search_edit.clear()
         self._replace_edit.clear()
         self._status_label.clear()
         super().closeEvent(event)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Document tab – one self-contained editor pane per open file
+# ─────────────────────────────────────────────────────────────────────────────
+class DocumentTab(QSplitter):
+    """Holds one IniDocument with its own tree, preview, and header editor."""
+
+    content_changed = pyqtSignal()
+
+    def __init__(
+        self,
+        language: Language,
+        sort_mode: SortMode,
+        export_format: ExportFormat,
+        parent: Optional[QWidget] = None,
+    ) -> None:
+        super().__init__(Qt.Orientation.Horizontal, parent)
+        self._language = language
+        self._sort_mode = sort_mode
+        self._export_format = export_format
+        self._doc: Optional[IniDocument] = None
+        self._dirty = False
+        self._syncing = False
+        self._last_synced_section: Optional[str] = None
+        self._last_tree_match: Optional[QTreeWidgetItem] = None
+        self._build_widgets()
+
+    # ── Widget construction ───────────────────────────────────────────────
+    def _build_widgets(self) -> None:
+        left_frame = QFrame()
+        left_layout = QVBoxLayout(left_frame)
+        left_layout.setContentsMargins(0, 0, 0, 0)
+
+        self._tree_label = QLabel("")
+        self._tree_label.setStyleSheet("font-weight: bold; padding: 4px;")
+        left_layout.addWidget(self._tree_label)
+
+        self._tree = IniTreeWidget(self._language)
+        self._tree.document_changed.connect(self._on_document_changed)
+        left_layout.addWidget(self._tree)
+        self.addWidget(left_frame)
+
+        self._right_tabs = QTabWidget()
+
+        self._preview_edit = QPlainTextEdit()
+        self._preview_edit.setReadOnly(True)
+        self._preview_edit.setFont(QFont("Courier New", 10))
+        self._highlighter = IniHighlighter(self._preview_edit.document())
+        self._right_tabs.addTab(self._preview_edit, "")
+
+        self._header_edit = QPlainTextEdit()
+        self._header_edit.setFont(QFont("Courier New", 10))
+        self._header_edit.textChanged.connect(self._on_header_changed)
+        self._right_tabs.addTab(self._header_edit, "")
+
+        self.addWidget(self._right_tabs)
+        self.setSizes([420, 780])
+
+        self._preview_edit.verticalScrollBar().valueChanged.connect(self._on_preview_scrolled)
+        self._tree.verticalScrollBar().valueChanged.connect(self._on_tree_scrolled)
+        self._tree.currentItemChanged.connect(self._on_tree_current_changed)
+
+    # ── Properties ────────────────────────────────────────────────────────
+    @property
+    def doc(self) -> Optional[IniDocument]:
+        return self._doc
+
+    @property
+    def dirty(self) -> bool:
+        return self._dirty
+
+    @dirty.setter
+    def dirty(self, value: bool) -> None:
+        self._dirty = value
+
+    @property
+    def tree(self) -> IniTreeWidget:
+        return self._tree
+
+    @property
+    def preview_edit(self) -> QPlainTextEdit:
+        return self._preview_edit
+
+    @property
+    def sort_mode(self) -> SortMode:
+        return self._sort_mode
+
+    @property
+    def export_format(self) -> ExportFormat:
+        return self._export_format
+
+    # ── Public API ────────────────────────────────────────────────────────
+    def set_language(self, language: Language) -> None:
+        self._language = language
+        self._tree.set_language(language)
+
+    def set_sort_mode(self, mode: SortMode) -> None:
+        self._sort_mode = mode
+        if self._doc is not None:
+            self._tree.set_sort_mode(mode)
+            self._refresh_preview()
+
+    def set_export_format(self, fmt: ExportFormat) -> None:
+        self._export_format = fmt
+        if self._doc is not None:
+            self._refresh_preview()
+
+    def set_labels(self, tree_label: str, preview_tab: str, header_tab: str, header_placeholder: str) -> None:
+        self._tree_label.setText(tree_label)
+        self._right_tabs.setTabText(0, preview_tab)
+        self._right_tabs.setTabText(1, header_tab)
+        self._header_edit.setPlaceholderText(header_placeholder)
+
+    def load_document(self, doc: IniDocument) -> None:
+        self._doc = doc
+        self._dirty = False
+        self.load_into_ui()
+
+    def load_into_ui(self) -> None:
+        if self._doc is None:
+            return
+        self._tree.load_document(self._doc)
+        self._tree.set_sort_mode(self._sort_mode)
+        self._header_edit.blockSignals(True)
+        self._header_edit.setPlainText("\n".join(self._doc.header_comments))
+        self._header_edit.blockSignals(False)
+        self._refresh_preview()
+
+    def sync_doc_from_preview(self) -> None:
+        text = self._preview_edit.document().toPlainText()
+        try:
+            new_doc = IniParser.parse_string(text)
+            new_doc.source_path = self._doc.source_path if self._doc else None
+            self._doc = new_doc
+            self._tree.load_document(self._doc)
+            self._tree.set_sort_mode(self._sort_mode)
+        except Exception:
+            pass
+        self._dirty = True
+        self.content_changed.emit()
+
+    def sync_tree_to_preview_match(self, cursor) -> None:
+        line_no = cursor.blockNumber()
+        lines = self._preview_edit.document().toPlainText().splitlines()
+
+        current_section_name: Optional[str] = None
+        matched_key: Optional[str] = None
+
+        for i, line in enumerate(lines[: line_no + 1]):
+            stripped = line.strip()
+            if stripped.startswith("[") and "]" in stripped:
+                current_section_name = stripped[1 : stripped.index("]")]
+                if i == line_no:
+                    matched_key = None
+            elif (
+                "=" in stripped
+                and not stripped.startswith(";")
+                and not stripped.startswith("#")
+                and i == line_no
+            ):
+                matched_key = stripped.split("=", 1)[0].strip()
+
+        if current_section_name is None:
+            return
+
+        from PyQt6.QtGui import QBrush
+        palette = QApplication.palette()
+        highlight = palette.color(QPalette.ColorGroup.Active, QPalette.ColorRole.Highlight)
+        col_count = self._tree.columnCount()
+
+        if self._last_tree_match is not None:
+            for c in range(col_count):
+                self._last_tree_match.setBackground(c, QBrush())
+            self._last_tree_match = None
+
+        match_item: Optional[QTreeWidgetItem] = None
+        for idx in range(self._tree.topLevelItemCount()):
+            sec_item = self._tree.topLevelItem(idx)
+            sec_data = sec_item.data(0, Qt.ItemDataRole.UserRole)
+            if not hasattr(sec_data, "name") or sec_data.name != current_section_name:
+                continue
+            if matched_key is None:
+                match_item = sec_item
+            else:
+                for j in range(sec_item.childCount()):
+                    entry_item = sec_item.child(j)
+                    entry_data = entry_item.data(0, Qt.ItemDataRole.UserRole)
+                    if hasattr(entry_data, "key") and entry_data.key == matched_key:
+                        match_item = entry_item
+                        break
+            break
+
+        if match_item is not None:
+            for c in range(col_count):
+                match_item.setBackground(c, QBrush(highlight))
+            self._tree.scrollToItem(match_item)
+            self._last_tree_match = match_item
+
+    # ── Private slots ─────────────────────────────────────────────────────
+    def _refresh_preview(self) -> None:
+        if self._doc is None:
+            return
+        doc = self._doc.sorted_copy(self._sort_mode)
+        try:
+            text = doc.export(self._export_format)
+        except Exception as exc:
+            text = f"[Render error: {exc}]"
+        self._preview_edit.setPlainText(text)
+        self._preview_edit.repaint()
+
+    def _on_document_changed(self) -> None:
+        self._dirty = True
+        self._refresh_preview()
+        self.content_changed.emit()
+
+    def _on_header_changed(self) -> None:
+        if self._doc is None:
+            return
+        raw = self._header_edit.toPlainText()
+        self._doc.header_comments = raw.splitlines() if raw.strip() else []
+        self._dirty = True
+        self._refresh_preview()
+        self.content_changed.emit()
+
+    # ── Scroll sync ───────────────────────────────────────────────────────
+    def _on_preview_scrolled(self) -> None:
+        if self._syncing or self._export_format != ExportFormat.INI or self._doc is None:
+            return
+        line_no = self._preview_edit.firstVisibleBlock().blockNumber()
+        lines = self._preview_edit.document().toPlainText().splitlines()
+        current_section_name: Optional[str] = None
+        for i in range(min(line_no, len(lines) - 1), -1, -1):
+            stripped = lines[i].strip()
+            if stripped.startswith("[") and "]" in stripped:
+                current_section_name = stripped[1 : stripped.index("]")]
+                break
+        if current_section_name is None or current_section_name == self._last_synced_section:
+            return
+        self._last_synced_section = current_section_name
+        for idx in range(self._tree.topLevelItemCount()):
+            sec_item = self._tree.topLevelItem(idx)
+            sec_data = sec_item.data(0, Qt.ItemDataRole.UserRole)
+            if hasattr(sec_data, "name") and sec_data.name == current_section_name:
+                self._syncing = True
+                self._tree.scrollToItem(sec_item, QAbstractItemView.ScrollHint.EnsureVisible)
+                self._syncing = False
+                break
+
+    def _scroll_preview_to_item(self, item: QTreeWidgetItem) -> None:
+        data = item.data(0, Qt.ItemDataRole.UserRole)
+        if data is None:
+            return
+        if hasattr(data, "name"):
+            section_name: str = data.name
+            key: Optional[str] = None
+        elif hasattr(data, "key"):
+            parent = item.parent()
+            if parent is None:
+                return
+            sec_data = parent.data(0, Qt.ItemDataRole.UserRole)
+            if not hasattr(sec_data, "name"):
+                return
+            section_name = sec_data.name
+            key = data.key
+        else:
+            return
+        lines = self._preview_edit.document().toPlainText().splitlines()
+        target_line: Optional[int] = None
+        current_section: Optional[str] = None
+        for i, line in enumerate(lines):
+            stripped = line.strip()
+            if stripped.startswith("[") and "]" in stripped:
+                current_section = stripped[1 : stripped.index("]")]
+                if current_section == section_name and key is None:
+                    target_line = i
+                    break
+            elif (
+                current_section == section_name
+                and key is not None
+                and "=" in stripped
+                and not stripped.startswith(";")
+                and not stripped.startswith("#")
+            ):
+                if stripped.split("=", 1)[0].strip() == key:
+                    target_line = i
+                    break
+        if target_line is None:
+            return
+        self._syncing = True
+        self._last_synced_section = section_name
+        self._preview_edit.verticalScrollBar().setValue(target_line)
+        self._syncing = False
+
+    def _on_tree_scrolled(self) -> None:
+        if self._syncing or self._export_format != ExportFormat.INI or self._doc is None:
+            return
+        item = self._tree.itemAt(0, 0)
+        if item is None:
+            return
+        self._scroll_preview_to_item(item)
+
+    def _on_tree_current_changed(
+        self, item: Optional[QTreeWidgetItem], _: Optional[QTreeWidgetItem]
+    ) -> None:
+        if self._syncing or self._export_format != ExportFormat.INI or item is None or self._doc is None:
+            return
+        self._scroll_preview_to_item(item)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -759,25 +1053,18 @@ class MainWindow(QMainWindow):
 
     def __init__(self) -> None:
         super().__init__()
-        self._doc: Optional[IniDocument] = None
-        self._dirty = False
         self._current_sort = SortMode.NONE
         self._current_format = ExportFormat.INI
         self._language = Language.EN
         self._find_dialog: Optional[FindDialog] = None
         self._find_replace_dialog: Optional[FindReplaceDialog] = None
-        self._last_tree_match: Optional[QTreeWidgetItem] = None
-        self._syncing = False
-        self._last_synced_section: Optional[str] = None
 
         self._build_ui()
         self._build_menu()
         self._build_toolbar()
         self._apply_dark_theme()
 
-        # Set window icon
         if hasattr(sys, '_MEIPASS'):
-            # Running in PyInstaller bundle
             icon_path = Path(sys._MEIPASS) / "src" / "icon.ico"
         else:
             icon_path = Path(__file__).resolve().parent / "icon.ico"
@@ -788,12 +1075,102 @@ class MainWindow(QMainWindow):
         self.resize(1200, 750)
         self.statusBar().showMessage(self._t("status_ready"))
 
+    # ── Helpers ───────────────────────────────────────────────────────────
     def _t(self, key: str, **kwargs: object) -> str:
         return translate(self._language, key, **kwargs)
 
+    def _current_tab(self) -> Optional[DocumentTab]:
+        w = self._file_tabs.currentWidget()
+        return w if isinstance(w, DocumentTab) else None
+
+    # ── Tab management ────────────────────────────────────────────────────
+    def _new_tab(self, doc: Optional[IniDocument] = None) -> DocumentTab:
+        tab = DocumentTab(self._language, self._current_sort, self._current_format)
+        tab.content_changed.connect(lambda: self._on_tab_content_changed(tab))
+        tab.set_labels(
+            self._t("tree_label"),
+            self._t("preview_tab"),
+            self._t("header_tab"),
+            self._t("header_placeholder"),
+        )
+        title = self._t("tab_untitled")
+        idx = self._file_tabs.addTab(tab, title)
+        self._file_tabs.setCurrentIndex(idx)
+        if doc is not None:
+            tab.load_document(doc)
+        return tab
+
+    def _close_tab(self, idx: int) -> None:
+        tab = self._file_tabs.widget(idx)
+        if isinstance(tab, DocumentTab) and tab.dirty:
+            reply = QMessageBox.question(
+                self,
+                self._t("confirm_discard_title"),
+                self._t("confirm_discard_text"),
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            )
+            if reply != QMessageBox.StandardButton.Yes:
+                return
+        self._file_tabs.removeTab(idx)
+        if self._file_tabs.count() == 0:
+            self._new_tab()
+
+    def _close_current_tab(self) -> None:
+        idx = self._file_tabs.currentIndex()
+        if idx >= 0:
+            self._close_tab(idx)
+
+    def _set_tab_title(self, idx: int, tab: DocumentTab) -> None:
+        doc = tab.doc
+        if doc is None or doc.source_path is None:
+            name = self._t("tab_untitled")
+        else:
+            name = doc.source_path.name
+        dirty_mark = " *" if tab.dirty else ""
+        self._file_tabs.setTabText(idx, f"{name}{dirty_mark}")
+        tooltip = str(doc.source_path) if doc is not None and doc.source_path else ""
+        self._file_tabs.setTabToolTip(idx, tooltip)
+
+    def _update_window_title(self) -> None:
+        tab = self._current_tab()
+        if tab is None or tab.doc is None:
+            self.setWindowTitle(self._t("app_name"))
+            return
+        doc = tab.doc
+        dirty_mark = " *" if tab.dirty else ""
+        if doc.source_path:
+            self.setWindowTitle(f"{doc.source_path.name}{dirty_mark} – {self._t('app_name')}")
+        else:
+            self.setWindowTitle(f"{self._t('app_name')}{dirty_mark}")
+
+    def _on_tab_content_changed(self, tab: DocumentTab) -> None:
+        for i in range(self._file_tabs.count()):
+            if self._file_tabs.widget(i) is tab:
+                self._set_tab_title(i, tab)
+                break
+        if self._current_tab() is tab:
+            self._update_window_title()
+
+    def _on_file_tab_changed(self, _: int) -> None:
+        tab = self._current_tab()
+        if tab is not None:
+            self._current_sort = tab.sort_mode
+            self._current_format = tab.export_format
+            sort_modes = [SortMode.NONE, SortMode.SECTIONS_ALPHA, SortMode.KEYS_ALPHA, SortMode.SECTIONS_AND_KEYS_ALPHA]
+            self._sort_combo.blockSignals(True)
+            self._sort_combo.setCurrentIndex(sort_modes.index(self._current_sort))
+            self._sort_combo.blockSignals(False)
+            fmts = [ExportFormat.INI, ExportFormat.JSON, ExportFormat.XML, ExportFormat.YAML]
+            self._format_combo.blockSignals(True)
+            self._format_combo.setCurrentIndex(fmts.index(self._current_format))
+            self._format_combo.blockSignals(False)
+        self._update_window_title()
+
+    # ── Translations ──────────────────────────────────────────────────────
     def _update_translations(self) -> None:
-        self.setWindowTitle(self._t("app_name"))
+        self._update_window_title()
         self._sort_group.setTitle(self._t("sort_group"))
+        sort_modes = [SortMode.NONE, SortMode.SECTIONS_ALPHA, SortMode.KEYS_ALPHA, SortMode.SECTIONS_AND_KEYS_ALPHA]
         self._sort_combo.blockSignals(True)
         self._sort_combo.clear()
         self._sort_combo.addItems([
@@ -802,22 +1179,21 @@ class MainWindow(QMainWindow):
             self._t("sort_keys"),
             self._t("sort_both"),
         ])
-        self._sort_combo.setCurrentIndex(self._current_sort.value - 1 if self._current_sort != SortMode.NONE else 0)
+        self._sort_combo.setCurrentIndex(sort_modes.index(self._current_sort))
         self._sort_combo.blockSignals(False)
         self._export_group.setTitle(self._t("export_group"))
         self._export_button.setText(self._t("export_button"))
         self._language_group.setTitle(self._t("language_label"))
-        self._left_label.setText(self._t("tree_label"))
-        self._tabs.setTabText(0, self._t("preview_tab"))
-        self._tabs.setTabText(1, self._t("header_tab"))
-        self._header_edit.setPlaceholderText(self._t("header_placeholder"))
         self._file_menu.setTitle(self._t("menu_file"))
         self._edit_menu.setTitle(self._t("menu_edit"))
         self._view_menu.setTitle(self._t("menu_view"))
         self._help_menu.setTitle(self._t("menu_help"))
         self._act_new.setText(self._t("action_new"))
+        self._act_new_tab.setText(self._t("action_new_tab"))
         self._act_open.setText(self._t("action_open"))
+        self._act_open_tab.setText(self._t("action_open_tab"))
         self._act_merge.setText(self._t("action_merge"))
+        self._act_close_tab.setText(self._t("action_close_tab"))
         self._act_save.setText(self._t("action_save"))
         self._act_save_as.setText(self._t("action_save_as"))
         self._act_export.setText(self._t("action_export"))
@@ -839,32 +1215,42 @@ class MainWindow(QMainWindow):
         self._language_combo.setItemText(1, "English")
         self._language_combo.setCurrentIndex(0 if self._language == Language.DE else 1)
         self._language_combo.blockSignals(False)
-        if self._doc is None:
-            self.statusBar().showMessage(self._t("status_ready"))
-        else:
-            self._update_title()
+        # Propagate labels into all open document tabs
+        for i in range(self._file_tabs.count()):
+            tab = self._file_tabs.widget(i)
+            if isinstance(tab, DocumentTab):
+                tab.set_labels(
+                    self._t("tree_label"),
+                    self._t("preview_tab"),
+                    self._t("header_tab"),
+                    self._t("header_placeholder"),
+                )
+                self._set_tab_title(i, tab)
 
     def _on_language_changed(self, idx: int) -> None:
         self._language = Language.DE if idx == 0 else Language.EN
-        self._tree.set_language(self._language)
-        # Update dialog languages if they exist
+        for i in range(self._file_tabs.count()):
+            tab = self._file_tabs.widget(i)
+            if isinstance(tab, DocumentTab):
+                tab.set_language(self._language)
         if self._find_dialog is not None:
             self._find_dialog.set_language(self._language)
         if self._find_replace_dialog is not None:
             self._find_replace_dialog.set_language(self._language)
         self._update_translations()
-        self._load_into_ui()
+        tab = self._current_tab()
+        if tab is not None:
+            tab.load_into_ui()
 
+    # ── UI construction ───────────────────────────────────────────────────
     def _build_ui(self) -> None:
         central = QWidget()
         self.setCentralWidget(central)
         root_layout = QVBoxLayout(central)
         root_layout.setContentsMargins(6, 6, 6, 6)
 
-        # Top control bar
         ctrl_bar = QHBoxLayout()
 
-        # Sort group
         self._sort_group = QGroupBox()
         sort_layout = QHBoxLayout(self._sort_group)
         self._sort_combo = QComboBox()
@@ -878,7 +1264,6 @@ class MainWindow(QMainWindow):
         sort_layout.addWidget(self._sort_combo)
         ctrl_bar.addWidget(self._sort_group)
 
-        # Export group
         self._export_group = QGroupBox()
         export_layout = QHBoxLayout(self._export_group)
         self._format_combo = QComboBox()
@@ -890,7 +1275,6 @@ class MainWindow(QMainWindow):
         export_layout.addWidget(self._export_button)
         ctrl_bar.addWidget(self._export_group)
 
-        # Language group
         self._language_group = QGroupBox()
         language_layout = QHBoxLayout(self._language_group)
         self._language_combo = QComboBox()
@@ -904,7 +1288,6 @@ class MainWindow(QMainWindow):
         self._logo_label: Optional[QLabel] = None
         self._logo_pixmap: Optional[QPixmap] = None
         if hasattr(sys, '_MEIPASS'):
-            # Running in PyInstaller bundle
             logo_path = Path(sys._MEIPASS) / "src" / "logo.png"
         else:
             logo_path = Path(__file__).resolve().parent / "logo.png"
@@ -925,44 +1308,15 @@ class MainWindow(QMainWindow):
 
         root_layout.addLayout(ctrl_bar)
 
-        # Main splitter
-        splitter = QSplitter(Qt.Orientation.Horizontal)
+        # Outer tab widget – one tab per open file
+        self._file_tabs = QTabWidget()
+        self._file_tabs.setTabsClosable(True)
+        self._file_tabs.tabCloseRequested.connect(self._close_tab)
+        self._file_tabs.currentChanged.connect(self._on_file_tab_changed)
+        root_layout.addWidget(self._file_tabs, 1)
 
-        # Left: tree
-        left_frame = QFrame()
-        left_layout = QVBoxLayout(left_frame)
-        left_layout.setContentsMargins(0, 0, 0, 0)
-        left_label = QLabel(self._t("tree_label"))
-        left_label.setStyleSheet("font-weight: bold; padding: 4px;")
-        self._left_label = left_label
-        left_layout.addWidget(left_label)
-        self._tree = IniTreeWidget(self._language)
-        self._tree.document_changed.connect(self._on_document_changed)
-        left_layout.addWidget(self._tree)
-        splitter.addWidget(left_frame)
-
-        # Right: tabs
-        self._tabs = QTabWidget()
-
-        self._preview_edit = QPlainTextEdit()
-        self._preview_edit.setReadOnly(True)
-        self._preview_edit.setFont(QFont("Courier New", 10))
-        self._highlighter = IniHighlighter(self._preview_edit.document())
-        self._tabs.addTab(self._preview_edit, self._t("preview_tab"))
-
-        self._header_edit = QPlainTextEdit()
-        self._header_edit.setFont(QFont("Courier New", 10))
-        self._header_edit.setPlaceholderText(self._t("header_placeholder"))
-        self._header_edit.textChanged.connect(self._on_header_changed)
-        self._tabs.addTab(self._header_edit, self._t("header_tab"))
-
-        splitter.addWidget(self._tabs)
-        splitter.setSizes([420, 780])
-        root_layout.addWidget(splitter, 1)
-
-        self._preview_edit.verticalScrollBar().valueChanged.connect(self._on_preview_scrolled)
-        self._tree.verticalScrollBar().valueChanged.connect(self._on_tree_scrolled)
-        self._tree.currentItemChanged.connect(self._on_tree_current_changed)
+        # Start with one empty tab
+        self._new_tab()
 
     def _update_logo_pixmap(self) -> None:
         if self._logo_pixmap is None or self._logo_label is None:
@@ -987,23 +1341,43 @@ class MainWindow(QMainWindow):
     def _build_menu(self) -> None:
         bar = self.menuBar()
 
-        # File
         self._file_menu = bar.addMenu(self._t("menu_file"))
+
         self._act_new = QAction(self._t("action_new"), self)
         self._act_new.setShortcut(QKeySequence.StandardKey.New)
         self._act_new.triggered.connect(self._new_document)
         self._file_menu.addAction(self._act_new)
+
+        self._act_new_tab = QAction(self._t("action_new_tab"), self)
+        self._act_new_tab.setShortcut(QKeySequence("Ctrl+T"))
+        self._act_new_tab.triggered.connect(lambda: self._new_tab())
+        self._file_menu.addAction(self._act_new_tab)
+
+        self._file_menu.addSeparator()
 
         self._act_open = QAction(self._t("action_open"), self)
         self._act_open.setShortcut(QKeySequence.StandardKey.Open)
         self._act_open.triggered.connect(self._open_file)
         self._file_menu.addAction(self._act_open)
 
+        self._act_open_tab = QAction(self._t("action_open_tab"), self)
+        self._act_open_tab.setShortcut(QKeySequence("Ctrl+Shift+O"))
+        self._act_open_tab.triggered.connect(self._open_file_in_new_tab)
+        self._file_menu.addAction(self._act_open_tab)
+
         self._act_merge = QAction(self._t("action_merge"), self)
         self._act_merge.triggered.connect(self._merge_files)
         self._file_menu.addAction(self._act_merge)
 
         self._file_menu.addSeparator()
+
+        self._act_close_tab = QAction(self._t("action_close_tab"), self)
+        self._act_close_tab.setShortcut(QKeySequence("Ctrl+W"))
+        self._act_close_tab.triggered.connect(self._close_current_tab)
+        self._file_menu.addAction(self._act_close_tab)
+
+        self._file_menu.addSeparator()
+
         self._act_save = QAction(self._t("action_save"), self)
         self._act_save.setShortcut(QKeySequence.StandardKey.Save)
         self._act_save.triggered.connect(self._save_file)
@@ -1015,44 +1389,43 @@ class MainWindow(QMainWindow):
         self._file_menu.addAction(self._act_save_as)
 
         self._file_menu.addSeparator()
+
         self._act_export = QAction(self._t("action_export"), self)
         self._act_export.triggered.connect(self._export_file)
         self._file_menu.addAction(self._act_export)
 
         self._file_menu.addSeparator()
+
         self._act_quit = QAction(self._t("action_quit"), self)
         self._act_quit.setShortcut(QKeySequence.StandardKey.Quit)
         self._act_quit.triggered.connect(self.close)
         self._file_menu.addAction(self._act_quit)
 
-        # Edit
         self._edit_menu = bar.addMenu(self._t("menu_edit"))
         self._act_add_section = QAction(self._t("action_add_section"), self)
-        self._act_add_section.triggered.connect(self._tree._add_section)
+        self._act_add_section.triggered.connect(self._add_section_to_current_tab)
         self._edit_menu.addAction(self._act_add_section)
-        
+
         self._edit_menu.addSeparator()
-        
+
         self._act_find = QAction(self._t("action_find"), self)
         self._act_find.setShortcut(QKeySequence.StandardKey.Find)
         self._act_find.triggered.connect(self._show_find_dialog)
         self._edit_menu.addAction(self._act_find)
-        
+
         self._act_find_replace = QAction(self._t("action_find_replace"), self)
         self._act_find_replace.setShortcut(QKeySequence.StandardKey.Replace)
         self._act_find_replace.triggered.connect(self._show_find_replace_dialog)
         self._edit_menu.addAction(self._act_find_replace)
 
-        # View
         self._view_menu = bar.addMenu(self._t("menu_view"))
         self._act_expand = QAction(self._t("action_expand"), self)
-        self._act_expand.triggered.connect(self._tree.expandAll)
+        self._act_expand.triggered.connect(self._expand_all)
         self._view_menu.addAction(self._act_expand)
         self._act_collapse = QAction(self._t("action_collapse"), self)
-        self._act_collapse.triggered.connect(self._tree.collapseAll)
+        self._act_collapse.triggered.connect(self._collapse_all)
         self._view_menu.addAction(self._act_collapse)
 
-        # Help
         self._help_menu = bar.addMenu(self._t("menu_help"))
         self._act_about = QAction(self._t("action_about"), self)
         self._act_about.triggered.connect(self._show_about)
@@ -1067,7 +1440,9 @@ class MainWindow(QMainWindow):
         self._toolbar.addSeparator()
         self._tb_export = self._toolbar.addAction(self._t("action_export"), self._export_file)
         self._toolbar.addSeparator()
-        self._tb_add_section = self._toolbar.addAction(self._t("action_add_section"), self._tree._add_section)
+        self._tb_add_section = self._toolbar.addAction(
+            self._t("action_add_section"), self._add_section_to_current_tab
+        )
 
     # ── Dark theme ────────────────────────────────────────────────────────
     def _apply_dark_theme(self) -> None:
@@ -1118,6 +1493,8 @@ class MainWindow(QMainWindow):
                 padding: 6px 14px; border-bottom: none;
             }
             QTabBar::tab:selected { background-color: #45475a; }
+            QTabBar::close-button { subcontrol-position: right; }
+            QTabBar::close-button:hover { background-color: #f38ba8; border-radius: 2px; }
             QStatusBar { background-color: #181825; border-top: 1px solid #45475a; }
             QFrame { border: none; }
             QDialog { background-color: #1e1e2e; }
@@ -1130,85 +1507,57 @@ class MainWindow(QMainWindow):
 
     # ── Document management ───────────────────────────────────────────────
     def _new_document(self) -> None:
-        if not self._confirm_discard():
-            return
-        self._doc = IniDocument()
-        self._load_into_ui()
-        self._dirty = False
-        self._update_title()
+        tab = self._current_tab()
+        # Reuse the current tab only if it is a pristine empty tab
+        if tab is not None and tab.doc is None and not tab.dirty:
+            tab.load_document(IniDocument())
+            self._set_tab_title(self._file_tabs.currentIndex(), tab)
+        else:
+            self._new_tab(IniDocument())
+        self._update_window_title()
         self.statusBar().showMessage(self._t("status_new_document"))
 
-    def _load_into_ui(self) -> None:
-        if self._doc is None:
-            return
-        self._tree.load_document(self._doc)
-        self._tree.set_sort_mode(self._current_sort)
-        # header comments
-        self._header_edit.blockSignals(True)
-        self._header_edit.setPlainText("\n".join(self._doc.header_comments))
-        self._header_edit.blockSignals(False)
-        self._refresh_preview()
-
-    def _refresh_preview(self) -> None:
-        if self._doc is None:
-            return
-        doc = self._doc.sorted_copy(self._current_sort)
+    def _load_file_into_tab(self, path: str, tab: DocumentTab) -> bool:
         try:
-            text = doc.export(self._current_format)
+            doc = IniParser.parse_file(path)
+            tab.load_document(doc)
+            return True
         except Exception as exc:
-            text = f"[Fehler beim Rendern: {exc}]"
-        self._preview_edit.setPlainText(text)
-        self._preview_edit.repaint()
+            QMessageBox.critical(self, self._t("error_export"), self._t("error_open", exc=str(exc)))
+            return False
 
-    # ── Slots ─────────────────────────────────────────────────────────────
-    def _on_sort_changed(self, idx: int) -> None:
-        modes = [
-            SortMode.NONE,
-            SortMode.SECTIONS_ALPHA,
-            SortMode.KEYS_ALPHA,
-            SortMode.SECTIONS_AND_KEYS_ALPHA,
-        ]
-        self._current_sort = modes[idx]
-        self._tree.set_sort_mode(self._current_sort)
-        self._refresh_preview()
-
-    def _on_format_changed(self, idx: int) -> None:
-        fmts = [ExportFormat.INI, ExportFormat.JSON, ExportFormat.XML, ExportFormat.YAML]
-        self._current_format = fmts[idx]
-        self._refresh_preview()
-
-    def _on_document_changed(self) -> None:
-        self._dirty = True
-        self._update_title()
-        self._refresh_preview()
-
-    def _on_header_changed(self) -> None:
-        if self._doc is None:
-            return
-        raw = self._header_edit.toPlainText()
-        self._doc.header_comments = raw.splitlines() if raw.strip() else []
-        self._dirty = True
-        self._update_title()
-        self._refresh_preview()
-
-    # ── File I/O ──────────────────────────────────────────────────────────
     def _open_file(self) -> None:
-        if not self._confirm_discard():
-            return
         path, _ = QFileDialog.getOpenFileName(
             self, self._t("open_file_title"), "",
             "INI-Dateien (*.ini *.cfg *.conf);;Alle Dateien (*)"
         )
         if not path:
             return
-        try:
-            self._doc = IniParser.parse_file(path)
-            self._load_into_ui()
-            self._dirty = False
-            self._update_title(Path(path).name)
+        # Reuse current tab if it is a pristine empty tab
+        tab = self._current_tab()
+        if tab is not None and tab.doc is None and not tab.dirty:
+            if self._load_file_into_tab(path, tab):
+                idx = self._file_tabs.currentIndex()
+                self._set_tab_title(idx, tab)
+                self._update_window_title()
+                self.statusBar().showMessage(self._t("status_loaded", path=path))
+        else:
+            self._open_file_in_new_tab(path)
+
+    def _open_file_in_new_tab(self, path: str = "") -> None:
+        if not path:
+            path, _ = QFileDialog.getOpenFileName(
+                self, self._t("open_file_title"), "",
+                "INI-Dateien (*.ini *.cfg *.conf);;Alle Dateien (*)"
+            )
+        if not path:
+            return
+        tab = self._new_tab()
+        if self._load_file_into_tab(path, tab):
+            idx = self._file_tabs.currentIndex()
+            self._set_tab_title(idx, tab)
+            self._update_window_title()
             self.statusBar().showMessage(self._t("status_loaded", path=path))
-        except Exception as exc:
-            QMessageBox.critical(self, self._t("error_export"), self._t("error_open", exc=str(exc)))
 
     def _merge_files(self) -> None:
         paths, _ = QFileDialog.getOpenFileNames(
@@ -1217,15 +1566,17 @@ class MainWindow(QMainWindow):
         )
         if not paths:
             return
-
-        if self._doc is None:
-            self._doc = IniDocument()
+        tab = self._current_tab()
+        if tab is None:
+            return
+        if tab.doc is None:
+            tab.load_document(IniDocument())
 
         merged = 0
         for path in paths:
             try:
                 doc = IniParser.parse_file(path)
-                self._doc.merge_from(doc)
+                tab.doc.merge_from(doc)
                 merged += 1
             except Exception as exc:
                 QMessageBox.warning(self, self._t("merge_error"), f"{path}: {exc}")
@@ -1233,43 +1584,49 @@ class MainWindow(QMainWindow):
         if merged == 0:
             return
 
-        self._load_into_ui()
-        self._dirty = True
-        self._update_title()
+        tab.load_into_ui()
+        tab.dirty = True
+        idx = self._file_tabs.currentIndex()
+        self._set_tab_title(idx, tab)
+        self._update_window_title()
         self.statusBar().showMessage(self._t("status_merged", count=merged))
 
     def _save_file(self) -> None:
-        if self._doc is None:
+        tab = self._current_tab()
+        if tab is None or tab.doc is None:
             return
-        if self._doc.source_path:
-            self._write_ini(self._doc.source_path)
+        if tab.doc.source_path:
+            self._write_ini(tab, tab.doc.source_path)
         else:
             self._save_file_as()
 
     def _save_file_as(self) -> None:
-        if self._doc is None:
+        tab = self._current_tab()
+        if tab is None or tab.doc is None:
             return
         path, _ = QFileDialog.getSaveFileName(
             self, self._t("save_file_title"), "",
             "INI-Dateien (*.ini);;Alle Dateien (*)"
         )
         if path:
-            self._write_ini(Path(path))
+            self._write_ini(tab, Path(path))
 
-    def _write_ini(self, path: Path) -> None:
+    def _write_ini(self, tab: DocumentTab, path: Path) -> None:
         try:
-            # Write based on current sort
-            doc = self._doc.sorted_copy(self._current_sort) if self._current_sort != SortMode.NONE else self._doc
+            doc = tab.doc.sorted_copy(tab.sort_mode) if tab.sort_mode != SortMode.NONE else tab.doc
             path.write_text(doc.to_ini_string(), encoding="utf-8")
-            self._doc.source_path = path
-            self._dirty = False
-            self._update_title(path.name)
+            tab.doc.source_path = path
+            tab.dirty = False
+            idx = self._file_tabs.currentIndex()
+            self._set_tab_title(idx, tab)
+            self._update_window_title()
             self.statusBar().showMessage(self._t("status_saved", path=path))
         except Exception as exc:
             QMessageBox.critical(self, self._t("error_export"), self._t("error_save", exc=str(exc)))
 
     def _export_file(self) -> None:
-        if self._doc is None:
+        tab = self._current_tab()
+        if tab is None or tab.doc is None:
             QMessageBox.information(self, self._t("no_document_title"), self._t("no_document_text"))
             return
         ext_map = {
@@ -1278,63 +1635,74 @@ class MainWindow(QMainWindow):
             ExportFormat.XML: ("XML-Dateien (*.xml)", ".xml"),
             ExportFormat.YAML: ("YAML-Dateien (*.yaml *.yml)", ".yaml"),
         }
-        filt, ext = ext_map[self._current_format]
-        path, _ = QFileDialog.getSaveFileName(self, self._t("action_export"), f"export{ext}", f"{filt};;Alle Dateien (*)")
+        filt, ext = ext_map[tab.export_format]
+        path, _ = QFileDialog.getSaveFileName(
+            self, self._t("action_export"), f"export{ext}", f"{filt};;Alle Dateien (*)"
+        )
         if not path:
             return
         try:
-            doc = self._doc.sorted_copy(self._current_sort)
-            content = doc.export(self._current_format)
+            doc = tab.doc.sorted_copy(tab.sort_mode)
+            content = doc.export(tab.export_format)
             Path(path).write_text(content, encoding="utf-8")
             self.statusBar().showMessage(self._t("status_exported", path=path))
         except Exception as exc:
             QMessageBox.critical(self, self._t("error_export"), str(exc))
 
-    # ── Helpers ───────────────────────────────────────────────────────────
-    def _update_title(self, filename: str = "") -> None:
-        dirty_mark = " *" if self._dirty else ""
-        if filename:
-            self.setWindowTitle(f"{filename}{dirty_mark} – {self._t('app_name')}")
-        else:
-            self.setWindowTitle(f"{self._t('app_name')}{dirty_mark}")
+    # ── Slots ─────────────────────────────────────────────────────────────
+    def _on_sort_changed(self, idx: int) -> None:
+        modes = [SortMode.NONE, SortMode.SECTIONS_ALPHA, SortMode.KEYS_ALPHA, SortMode.SECTIONS_AND_KEYS_ALPHA]
+        self._current_sort = modes[idx]
+        tab = self._current_tab()
+        if tab is not None:
+            tab.set_sort_mode(self._current_sort)
 
-    def _confirm_discard(self) -> bool:
-        if not self._dirty:
-            return True
-        reply = QMessageBox.question(
-            self, self._t("confirm_discard_title"),
-            self._t("confirm_discard_text"),
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-        )
-        return reply == QMessageBox.StandardButton.Yes
+    def _on_format_changed(self, idx: int) -> None:
+        fmts = [ExportFormat.INI, ExportFormat.JSON, ExportFormat.XML, ExportFormat.YAML]
+        self._current_format = fmts[idx]
+        tab = self._current_tab()
+        if tab is not None:
+            tab.set_export_format(self._current_format)
+
+    def _add_section_to_current_tab(self) -> None:
+        tab = self._current_tab()
+        if tab is not None:
+            tab.tree._add_section()
+
+    def _expand_all(self) -> None:
+        tab = self._current_tab()
+        if tab is not None:
+            tab.tree.expandAll()
+
+    def _collapse_all(self) -> None:
+        tab = self._current_tab()
+        if tab is not None:
+            tab.tree.collapseAll()
 
     def _show_about(self) -> None:
         QMessageBox.about(
             self, self._t("about_title", app=self.APP_NAME),
             self._t("about_text", app=self.APP_NAME)
         )
-    
+
     # ── Find & Replace ────────────────────────────────────────────────────
     def _show_find_dialog(self) -> None:
         if self._find_dialog is None:
             self._find_dialog = FindDialog(self._language, self)
-            self._find_dialog.found.connect(self._on_find_triggered)
-            # Connect button clicks
+            self._find_dialog.found.connect(lambda _: None)
             self._find_dialog._next_btn.clicked.disconnect()
             self._find_dialog._prev_btn.clicked.disconnect()
             self._find_dialog._next_btn.clicked.connect(self._find_next)
             self._find_dialog._prev_btn.clicked.connect(self._find_prev)
-        
         self._find_dialog.show()
         self._find_dialog.raise_()
         self._find_dialog.activateWindow()
         self._find_dialog._search_edit.setFocus()
         self._find_dialog._search_edit.selectAll()
-    
+
     def _show_find_replace_dialog(self) -> None:
         if self._find_replace_dialog is None:
             self._find_replace_dialog = FindReplaceDialog(self._language, self)
-            # Connect button clicks
             self._find_replace_dialog._next_btn.clicked.disconnect()
             self._find_replace_dialog._prev_btn.clicked.disconnect()
             self._find_replace_dialog._replace_btn.clicked.disconnect()
@@ -1343,136 +1711,113 @@ class MainWindow(QMainWindow):
             self._find_replace_dialog._prev_btn.clicked.connect(self._find_prev)
             self._find_replace_dialog._replace_btn.clicked.connect(self._replace_next)
             self._find_replace_dialog._replace_all_btn.clicked.connect(self._replace_all)
-        
         self._find_replace_dialog.show()
         self._find_replace_dialog.raise_()
         self._find_replace_dialog.activateWindow()
         self._find_replace_dialog._search_edit.setFocus()
         self._find_replace_dialog._search_edit.selectAll()
-    
+
+    def _active_find_dialog(self) -> Optional[FindDialog]:
+        if self._find_dialog and self._find_dialog.isVisible():
+            return self._find_dialog
+        if self._find_replace_dialog and self._find_replace_dialog.isVisible():
+            return self._find_replace_dialog
+        return None
+
     def _find_next(self) -> None:
-        """Search for the next occurrence"""
-        dialog = self._find_dialog if self._find_dialog and self._find_dialog.isVisible() else self._find_replace_dialog
-        if dialog is None or not dialog.isVisible():
+        dialog = self._active_find_dialog()
+        if dialog is None:
             return
-        
+        tab = self._current_tab()
+        if tab is None:
+            return
         search_text = dialog.get_search_text()
         if not search_text:
             dialog.set_status("")
             return
-        
-        case_sensitive = dialog.is_case_sensitive()
-        whole_words = dialog.is_whole_words()
-
-        count = self._search_in_text_edit(self._preview_edit, search_text, case_sensitive, whole_words, forward=True)
-
-        if count == 0:
-            dialog.set_status(self._t("find_not_found"))
-        else:
-            dialog.set_status(self._t("find_count", count=count))
+        count = self._search_in_text_edit(
+            tab.preview_edit, search_text,
+            dialog.is_case_sensitive(), dialog.is_whole_words(), forward=True
+        )
+        dialog.set_status(self._t("find_count", count=count) if count else self._t("find_not_found"))
 
     def _find_prev(self) -> None:
-        """Search for the previous occurrence"""
-        dialog = self._find_dialog if self._find_dialog and self._find_dialog.isVisible() else self._find_replace_dialog
-        if dialog is None or not dialog.isVisible():
+        dialog = self._active_find_dialog()
+        if dialog is None:
             return
-
+        tab = self._current_tab()
+        if tab is None:
+            return
         search_text = dialog.get_search_text()
         if not search_text:
             dialog.set_status("")
             return
-
-        case_sensitive = dialog.is_case_sensitive()
-        whole_words = dialog.is_whole_words()
-
-        count = self._search_in_text_edit(self._preview_edit, search_text, case_sensitive, whole_words, forward=False)
-
-        if count == 0:
-            dialog.set_status(self._t("find_not_found"))
-        else:
-            dialog.set_status(self._t("find_count", count=count))
-    
-    def _sync_doc_from_preview(self) -> None:
-        """Re-parse the preview text into self._doc and refresh the tree."""
-        text = self._preview_edit.document().toPlainText()
-        try:
-            new_doc = IniParser.parse_string(text)
-            new_doc.source_path = self._doc.source_path if self._doc else None
-            self._doc = new_doc
-            self._tree.load_document(self._doc)
-            self._tree.set_sort_mode(self._current_sort)
-        except Exception:
-            pass
-        self._dirty = True
-        self._update_title()
+        count = self._search_in_text_edit(
+            tab.preview_edit, search_text,
+            dialog.is_case_sensitive(), dialog.is_whole_words(), forward=False
+        )
+        dialog.set_status(self._t("find_count", count=count) if count else self._t("find_not_found"))
 
     def _replace_next(self) -> None:
-        """Replace the current selection and find next"""
         if self._find_replace_dialog is None or not self._find_replace_dialog.isVisible():
             return
-        
+        tab = self._current_tab()
+        if tab is None:
+            return
         search_text = self._find_replace_dialog.get_search_text()
         replace_text = self._find_replace_dialog.get_replace_text()
-        
         if not search_text:
             return
-        
-        # Try to replace selected text in preview
-        cursor = self._preview_edit.textCursor()
+        cursor = tab.preview_edit.textCursor()
         if cursor.hasSelection():
             selected = cursor.selectedText()
-            if selected == search_text or (not self._find_replace_dialog.is_case_sensitive() and selected.lower() == search_text.lower()):
+            matches = (
+                selected == search_text
+                if self._find_replace_dialog.is_case_sensitive()
+                else selected.lower() == search_text.lower()
+            )
+            if matches:
                 cursor.insertText(replace_text)
-                self._sync_doc_from_preview()
-
-        # Find next occurrence
+                tab.sync_doc_from_preview()
         self._find_next()
-    
+
     def _replace_all(self) -> None:
-        """Replace all occurrences"""
         if self._find_replace_dialog is None or not self._find_replace_dialog.isVisible():
             return
-        
+        tab = self._current_tab()
+        if tab is None:
+            return
         search_text = self._find_replace_dialog.get_search_text()
         replace_text = self._find_replace_dialog.get_replace_text()
         case_sensitive = self._find_replace_dialog.is_case_sensitive()
-        
         if not search_text:
             return
-        
-        # Get all text from preview
-        doc = self._preview_edit.document()
-        text = doc.toPlainText()
-        
-        # Replace all
+        text = tab.preview_edit.document().toPlainText()
         if case_sensitive:
             new_text = text.replace(search_text, replace_text)
             count = text.count(search_text)
         else:
-            # Case-insensitive replacement
             import re
             pattern = re.compile(re.escape(search_text), re.IGNORECASE)
             new_text = pattern.sub(replace_text, text)
             count = len(pattern.findall(text))
-        
         if count > 0:
-            self._preview_edit.setPlainText(new_text)
-            self._sync_doc_from_preview()
+            tab.preview_edit.setPlainText(new_text)
+            tab.sync_doc_from_preview()
             self._find_replace_dialog.set_status(self._t("find_replace_count", count=count))
         else:
             self._find_replace_dialog.set_status(self._t("find_not_found"))
-    
-    def _count_all_in_text_edit(self, text_edit: QPlainTextEdit, search_text: str, case_sensitive: bool, whole_words: bool) -> int:
-        """Count all occurrences of search_text in a QPlainTextEdit."""
-        from PyQt6.QtGui import QTextCursor, QTextDocument
 
+    def _count_all_in_text_edit(
+        self, text_edit: QPlainTextEdit, search_text: str, case_sensitive: bool, whole_words: bool
+    ) -> int:
+        from PyQt6.QtGui import QTextCursor, QTextDocument
         doc = text_edit.document()
         options = QTextDocument.FindFlag(0)
         if case_sensitive:
             options |= QTextDocument.FindFlag.FindCaseSensitively
         if whole_words:
             options |= QTextDocument.FindFlag.FindWholeWords
-
         count = 0
         cursor = QTextCursor(doc)
         while True:
@@ -1482,13 +1827,13 @@ class MainWindow(QMainWindow):
             count += 1
         return count
 
-    def _search_in_text_edit(self, text_edit: QPlainTextEdit, search_text: str, case_sensitive: bool, whole_words: bool, forward: bool = True) -> int:
-        """Navigate to next/prev match. Returns total number of matches."""
+    def _search_in_text_edit(
+        self, text_edit: QPlainTextEdit, search_text: str,
+        case_sensitive: bool, whole_words: bool, forward: bool = True
+    ) -> int:
         from PyQt6.QtGui import QTextCursor, QTextDocument
-
         doc = text_edit.document()
         cursor = text_edit.textCursor()
-
         options = QTextDocument.FindFlag(0)
         if case_sensitive:
             options |= QTextDocument.FindFlag.FindCaseSensitively
@@ -1496,217 +1841,36 @@ class MainWindow(QMainWindow):
             options |= QTextDocument.FindFlag.FindWholeWords
         if not forward:
             options |= QTextDocument.FindFlag.FindBackward
-
         found_cursor = doc.find(search_text, cursor, options)
-
         if found_cursor.isNull():
-            # Try wrapping around
             if forward:
                 cursor.movePosition(QTextCursor.MoveOperation.Start)
             else:
                 cursor.movePosition(QTextCursor.MoveOperation.End)
             found_cursor = doc.find(search_text, cursor, options)
-
         if not found_cursor.isNull():
             text_edit.setTextCursor(found_cursor)
-            if text_edit is self._preview_edit and self._current_format == ExportFormat.INI:
-                self._sync_tree_to_preview_match(found_cursor)
+            tab = self._current_tab()
+            if tab is not None and text_edit is tab.preview_edit and tab.export_format == ExportFormat.INI:
+                tab.sync_tree_to_preview_match(found_cursor)
             return self._count_all_in_text_edit(text_edit, search_text, case_sensitive, whole_words)
-
         return 0
-    
-    def _sync_tree_to_preview_match(self, cursor) -> None:
-        """Select the tree item that corresponds to the cursor position in the preview."""
-        line_no = cursor.blockNumber()
-        lines = self._preview_edit.document().toPlainText().splitlines()
-
-        current_section_name: Optional[str] = None
-        matched_key: Optional[str] = None
-
-        for i, line in enumerate(lines[: line_no + 1]):
-            stripped = line.strip()
-            if stripped.startswith("[") and "]" in stripped:
-                current_section_name = stripped[1 : stripped.index("]")]
-                if i == line_no:
-                    matched_key = None
-            elif (
-                "=" in stripped
-                and not stripped.startswith(";")
-                and not stripped.startswith("#")
-                and i == line_no
-            ):
-                matched_key = stripped.split("=", 1)[0].strip()
-
-        if current_section_name is None:
-            return
-
-        from PyQt6.QtGui import QBrush, QPalette
-        from PyQt6.QtWidgets import QApplication
-        palette = QApplication.palette()
-        highlight = palette.color(QPalette.ColorGroup.Active, QPalette.ColorRole.Highlight)
-        col_count = self._tree.columnCount()
-
-        # Clear previous match background
-        if self._last_tree_match is not None:
-            for c in range(col_count):
-                self._last_tree_match.setBackground(c, QBrush())
-            self._last_tree_match = None
-
-        match_item: Optional[QTreeWidgetItem] = None
-        for idx in range(self._tree.topLevelItemCount()):
-            sec_item = self._tree.topLevelItem(idx)
-            sec_data = sec_item.data(0, Qt.ItemDataRole.UserRole)
-            if not hasattr(sec_data, "name") or sec_data.name != current_section_name:
-                continue
-            if matched_key is None:
-                match_item = sec_item
-            else:
-                for j in range(sec_item.childCount()):
-                    entry_item = sec_item.child(j)
-                    entry_data = entry_item.data(0, Qt.ItemDataRole.UserRole)
-                    if hasattr(entry_data, "key") and entry_data.key == matched_key:
-                        match_item = entry_item
-                        break
-            break
-
-        if match_item is not None:
-            for c in range(col_count):
-                match_item.setBackground(c, QBrush(highlight))
-            self._tree.scrollToItem(match_item)
-            self._last_tree_match = match_item
-
-    def _search_in_tree(self, search_text: str, case_sensitive: bool, whole_words: bool) -> int:
-        """Search in tree and highlight matching items"""
-        count = 0
-        
-        def search_recursive(item: QTreeWidgetItem) -> None:
-            nonlocal count
-            for col in range(self._tree.columnCount()):
-                item_text = item.text(col)
-                if self._match_text(item_text, search_text, case_sensitive, whole_words):
-                    item.setSelected(True)
-                    count += 1
-                    break
-            
-            for i in range(item.childCount()):
-                search_recursive(item.child(i))
-        
-        # Clear previous selection
-        self._tree.clearSelection()
-        
-        # Search from root
-        for i in range(self._tree.topLevelItemCount()):
-            search_recursive(self._tree.topLevelItem(i))
-        
-        return count
-    
-    def _match_text(self, text: str, search_text: str, case_sensitive: bool, whole_words: bool) -> bool:
-        """Check if text matches search criteria"""
-        if whole_words:
-            words = text.split()
-            search_words = search_text.split()
-            for word in search_words:
-                if case_sensitive:
-                    if word not in words:
-                        return False
-                else:
-                    if word.lower() not in [w.lower() for w in words]:
-                        return False
-            return True
-        else:
-            if case_sensitive:
-                return search_text in text
-            else:
-                return search_text.lower() in text.lower()
-    
-    def _on_preview_scrolled(self) -> None:
-        if self._syncing or self._current_format != ExportFormat.INI or self._doc is None:
-            return
-        line_no = self._preview_edit.firstVisibleBlock().blockNumber()
-        lines = self._preview_edit.document().toPlainText().splitlines()
-        current_section_name: Optional[str] = None
-        for i in range(min(line_no, len(lines) - 1), -1, -1):
-            stripped = lines[i].strip()
-            if stripped.startswith("[") and "]" in stripped:
-                current_section_name = stripped[1 : stripped.index("]")]
-                break
-        if current_section_name is None or current_section_name == self._last_synced_section:
-            return
-        self._last_synced_section = current_section_name
-        for idx in range(self._tree.topLevelItemCount()):
-            sec_item = self._tree.topLevelItem(idx)
-            sec_data = sec_item.data(0, Qt.ItemDataRole.UserRole)
-            if hasattr(sec_data, "name") and sec_data.name == current_section_name:
-                self._syncing = True
-                self._tree.scrollToItem(sec_item, QAbstractItemView.ScrollHint.EnsureVisible)
-                self._syncing = False
-                break
-
-    def _scroll_preview_to_item(self, item: QTreeWidgetItem) -> None:
-        """Scroll the preview to the line that corresponds to the given tree item."""
-        data = item.data(0, Qt.ItemDataRole.UserRole)
-        if data is None:
-            return
-        if hasattr(data, "name"):
-            section_name: str = data.name
-            key: Optional[str] = None
-        elif hasattr(data, "key"):
-            parent = item.parent()
-            if parent is None:
-                return
-            sec_data = parent.data(0, Qt.ItemDataRole.UserRole)
-            if not hasattr(sec_data, "name"):
-                return
-            section_name = sec_data.name
-            key = data.key
-        else:
-            return
-        lines = self._preview_edit.document().toPlainText().splitlines()
-        target_line: Optional[int] = None
-        current_section: Optional[str] = None
-        for i, line in enumerate(lines):
-            stripped = line.strip()
-            if stripped.startswith("[") and "]" in stripped:
-                current_section = stripped[1 : stripped.index("]")]
-                if current_section == section_name and key is None:
-                    target_line = i
-                    break
-            elif (
-                current_section == section_name
-                and key is not None
-                and "=" in stripped
-                and not stripped.startswith(";")
-                and not stripped.startswith("#")
-            ):
-                if stripped.split("=", 1)[0].strip() == key:
-                    target_line = i
-                    break
-        if target_line is None:
-            return
-        self._syncing = True
-        self._last_synced_section = section_name
-        self._preview_edit.verticalScrollBar().setValue(target_line)
-        self._syncing = False
-
-    def _on_tree_scrolled(self) -> None:
-        if self._syncing or self._current_format != ExportFormat.INI or self._doc is None:
-            return
-        item = self._tree.itemAt(0, 0)
-        if item is None:
-            return
-        self._scroll_preview_to_item(item)
-
-    def _on_tree_current_changed(self, item: Optional[QTreeWidgetItem], _: Optional[QTreeWidgetItem]) -> None:
-        if self._syncing or self._current_format != ExportFormat.INI or item is None or self._doc is None:
-            return
-        self._scroll_preview_to_item(item)
-
-    def _on_find_triggered(self, count: int) -> None:
-        """Slot for find dialog signals"""
-        pass
 
     def closeEvent(self, event) -> None:  # type: ignore[override]
-        if self._confirm_discard():
+        dirty_count = sum(
+            1 for i in range(self._file_tabs.count())
+            if isinstance(self._file_tabs.widget(i), DocumentTab)
+            and self._file_tabs.widget(i).dirty  # type: ignore[union-attr]
+        )
+        if dirty_count == 0:
+            event.accept()
+            return
+        msg = self._t("confirm_discard_all_text") if dirty_count > 1 else self._t("confirm_discard_text")
+        reply = QMessageBox.question(
+            self, self._t("confirm_discard_title"), msg,
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if reply == QMessageBox.StandardButton.Yes:
             event.accept()
         else:
             event.ignore()

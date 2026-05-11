@@ -8,10 +8,10 @@ from enum import Enum
 from pathlib import Path
 from typing import Optional
 
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtCore import Qt, QUrl, pyqtSignal
 from PyQt6.QtGui import (
-    QAction, QColor, QFont, QIcon, QKeySequence, QPalette, QPixmap,
-    QTextCharFormat, QSyntaxHighlighter,
+    QAction, QColor, QDragEnterEvent, QDropEvent, QFont, QIcon, QKeySequence,
+    QPalette, QPixmap, QTextCharFormat, QSyntaxHighlighter,
 )
 from PyQt6.QtWidgets import (
     QAbstractItemView, QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox,
@@ -1074,6 +1074,7 @@ class MainWindow(QMainWindow):
         self._update_translations()
         self.resize(1200, 750)
         self.statusBar().showMessage(self._t("status_ready"))
+        self.setAcceptDrops(True)
 
     # ── Helpers ───────────────────────────────────────────────────────────
     def _t(self, key: str, **kwargs: object) -> str:
@@ -1855,6 +1856,41 @@ class MainWindow(QMainWindow):
                 tab.sync_tree_to_preview_match(found_cursor)
             return self._count_all_in_text_edit(text_edit, search_text, case_sensitive, whole_words)
         return 0
+
+    # ── Drag & Drop ───────────────────────────────────────────────────────
+    _INI_SUFFIXES = {".ini", ".cfg", ".conf"}
+
+    def _is_valid_ini_url(self, url: QUrl) -> bool:
+        return url.isLocalFile() and Path(url.toLocalFile()).suffix.lower() in self._INI_SUFFIXES
+
+    def _is_file_already_open(self, path: Path) -> bool:
+        for i in range(self._file_tabs.count()):
+            tab = self._file_tabs.widget(i)
+            if isinstance(tab, DocumentTab) and tab.doc is not None:
+                if tab.doc.source_path == path:
+                    return True
+        return False
+
+    def dragEnterEvent(self, event: QDragEnterEvent) -> None:  # type: ignore[override]
+        if event.mimeData().hasUrls() and any(
+            self._is_valid_ini_url(u) for u in event.mimeData().urls()
+        ):
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    def dragMoveEvent(self, event) -> None:  # type: ignore[override]
+        event.acceptProposedAction()
+
+    def dropEvent(self, event: QDropEvent) -> None:  # type: ignore[override]
+        for url in event.mimeData().urls():
+            if not self._is_valid_ini_url(url):
+                continue
+            path = Path(url.toLocalFile())
+            if self._is_file_already_open(path):
+                continue
+            self._open_file_in_new_tab(str(path))
+        event.acceptProposedAction()
 
     def closeEvent(self, event) -> None:  # type: ignore[override]
         dirty_count = sum(

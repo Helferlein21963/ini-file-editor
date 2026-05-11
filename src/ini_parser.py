@@ -272,7 +272,15 @@ class IniParser:
             # Section header
             m = _SECTION_RE.match(line.strip())
             if m:
-                sec = IniSection(name=m.group(1).strip(), preceding_comments=pending_comments)
+                sec_name = m.group(1).strip()
+                existing = doc.get_section(sec_name)
+                if existing is not None:
+                    # Duplicate section: merge subsequent entries into the existing one
+                    existing.trailing_comments.extend(pending_comments)
+                    pending_comments = []
+                    current_section = existing
+                    continue
+                sec = IniSection(name=sec_name, preceding_comments=pending_comments)
                 pending_comments = []
                 if current_section is None:
                     # flush header comments (empty lines before first section)

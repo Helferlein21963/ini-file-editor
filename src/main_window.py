@@ -498,8 +498,7 @@ class IniTreeWidget(QTreeWidget):
             return
         name, ok = self._simple_input(self._t("prompt_new_section"), self._t("section_name"))
         if ok and name:
-            sec = IniSection(name=name)
-            self._doc.sections.append(sec)
+            self._doc.get_or_create_section(name)
             self._refresh()
             self.document_changed.emit()
 

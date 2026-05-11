@@ -119,6 +119,15 @@ class IniDocument:
                 return True
         return False
 
+    def clone(self) -> "IniDocument":
+        doc = IniDocument(
+            header_comments=list(self.header_comments),
+            trailing_comments=list(self.trailing_comments),
+            source_path=self.source_path,
+        )
+        doc.sections = [s.clone() for s in self.sections]
+        return doc
+
     def merge_from(self, other: "IniDocument") -> None:
         if not self.header_comments and other.header_comments:
             self.header_comments = list(other.header_comments)

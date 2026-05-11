@@ -64,6 +64,8 @@ TRANSLATIONS = {
         "section_name": "Abschnittsname:",
         "section_pre_comments": "Kommentare (vor Header):",
         "section_post_comments": "Kommentare (nach Einträgen):",
+        "action_undo": "↩ &Rückgängig",
+        "action_redo": "↪ &Wiederholen",
         "context_add_section": "➕ Abschnitt hinzufügen",
         "context_edit_section": "✏️ Abschnitt bearbeiten",
         "context_add_entry": "➕ Schlüssel hinzufügen",
@@ -160,6 +162,8 @@ TRANSLATIONS = {
         "section_name": "Section name:",
         "section_pre_comments": "Comments (before header):",
         "section_post_comments": "Comments (after entries):",
+        "action_undo": "↩ &Undo",
+        "action_redo": "↪ &Redo",
         "context_add_section": "➕ Add section",
         "context_edit_section": "✏️ Edit section",
         "context_add_entry": "➕ Add key",
@@ -352,6 +356,7 @@ class SectionEditDialog(QDialog):
 # ─────────────────────────────────────────────────────────────────────────────
 class IniTreeWidget(QTreeWidget):
     document_changed = pyqtSignal()
+    about_to_change = pyqtSignal()
 
     def __init__(self, language: Language, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
@@ -482,6 +487,7 @@ class IniTreeWidget(QTreeWidget):
     def _edit_section(self, item: QTreeWidgetItem, sec: IniSection) -> None:
         dlg = SectionEditDialog(sec, self._language, self)
         if dlg.exec() == QDialog.DialogCode.Accepted:
+            self.about_to_change.emit()
             dlg.apply_to_section()
             self._style_section_item(item, sec)
             self.document_changed.emit()
@@ -489,6 +495,7 @@ class IniTreeWidget(QTreeWidget):
     def _edit_entry(self, item: QTreeWidgetItem, entry: IniEntry) -> None:
         dlg = EntryEditDialog(entry, self._language, self)
         if dlg.exec() == QDialog.DialogCode.Accepted:
+            self.about_to_change.emit()
             dlg.apply_to_entry()
             self._style_entry_item(item, entry)
             self.document_changed.emit()
@@ -498,6 +505,7 @@ class IniTreeWidget(QTreeWidget):
             return
         name, ok = self._simple_input(self._t("prompt_new_section"), self._t("section_name"))
         if ok and name:
+            self.about_to_change.emit()
             self._doc.get_or_create_section(name)
             self._refresh()
             self.document_changed.emit()
@@ -507,6 +515,7 @@ class IniTreeWidget(QTreeWidget):
         if ok and key:
             val, ok2 = self._simple_input(self._t("prompt_new_entry"), self._t("entry_value"))
             if ok2:
+                self.about_to_change.emit()
                 entry = IniEntry(key=key, value=val)
                 sec.entries.append(entry)
                 child = QTreeWidgetItem(sec_item)
@@ -523,6 +532,7 @@ class IniTreeWidget(QTreeWidget):
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
         if reply == QMessageBox.StandardButton.Yes:
+            self.about_to_change.emit()
             self._doc.remove_section(sec.name)
             root = self.invisibleRootItem()
             root.removeChild(item)
@@ -540,6 +550,7 @@ class IniTreeWidget(QTreeWidget):
         )
         if reply != QMessageBox.StandardButton.Yes:
             return
+        self.about_to_change.emit()
         sec: IniSection = parent.data(0, Qt.ItemDataRole.UserRole)
         sec.remove_entry(entry.key)
         parent.removeChild(item)
@@ -760,6 +771,9 @@ class DocumentTab(QSplitter):
         self._syncing = False
         self._last_synced_section: Optional[str] = None
         self._last_tree_match: Optional[QTreeWidgetItem] = None
+        self._undo_stack: list[IniDocument] = []
+        self._redo_stack: list[IniDocument] = []
+        self._header_pristine = True
         self._build_widgets()
 
     # ── Widget construction ───────────────────────────────────────────────
@@ -774,6 +788,7 @@ class DocumentTab(QSplitter):
 
         self._tree = IniTreeWidget(self._language)
         self._tree.document_changed.connect(self._on_document_changed)
+        self._tree.about_to_change.connect(self.push_undo_state)
         left_layout.addWidget(self._tree)
         self.addWidget(left_frame)
 
@@ -848,14 +863,46 @@ class DocumentTab(QSplitter):
         self._right_tabs.setTabText(1, header_tab)
         self._header_edit.setPlaceholderText(header_placeholder)
 
+    def push_undo_state(self) -> None:
+        if self._doc is None:
+            return
+        self._undo_stack.append(self._doc.clone())
+        del self._redo_stack[:]
+        if len(self._undo_stack) > 100:
+            self._undo_stack.pop(0)
+
+    def undo(self) -> None:
+        if not self._undo_stack or self._doc is None:
+            return
+        self._redo_stack.append(self._doc.clone())
+        self._doc = self._undo_stack.pop()
+        self._header_pristine = True
+        self.load_into_ui()
+        self._dirty = True
+        self.content_changed.emit()
+
+    def redo(self) -> None:
+        if not self._redo_stack or self._doc is None:
+            return
+        self._undo_stack.append(self._doc.clone())
+        self._doc = self._redo_stack.pop()
+        self._header_pristine = True
+        self.load_into_ui()
+        self._dirty = True
+        self.content_changed.emit()
+
     def load_document(self, doc: IniDocument) -> None:
         self._doc = doc
         self._dirty = False
+        self._undo_stack.clear()
+        self._redo_stack.clear()
+        self._header_pristine = True
         self.load_into_ui()
 
     def load_into_ui(self) -> None:
         if self._doc is None:
             return
+        self._header_pristine = True
         self._tree.load_document(self._doc)
         self._tree.set_sort_mode(self._sort_mode)
         self._header_edit.blockSignals(True)
@@ -953,6 +1000,9 @@ class DocumentTab(QSplitter):
     def _on_header_changed(self) -> None:
         if self._doc is None:
             return
+        if self._header_pristine:
+            self.push_undo_state()
+            self._header_pristine = False
         raw = self._header_edit.toPlainText()
         self._doc.header_comments = raw.splitlines() if raw.strip() else []
         self._dirty = True
@@ -1198,6 +1248,8 @@ class MainWindow(QMainWindow):
         self._act_save_as.setText(self._t("action_save_as"))
         self._act_export.setText(self._t("action_export"))
         self._act_quit.setText(self._t("action_quit"))
+        self._act_undo.setText(self._t("action_undo"))
+        self._act_redo.setText(self._t("action_redo"))
         self._act_add_section.setText(self._t("action_add_section"))
         self._act_expand.setText(self._t("action_expand"))
         self._act_collapse.setText(self._t("action_collapse"))
@@ -1402,6 +1454,19 @@ class MainWindow(QMainWindow):
         self._file_menu.addAction(self._act_quit)
 
         self._edit_menu = bar.addMenu(self._t("menu_edit"))
+
+        self._act_undo = QAction(self._t("action_undo"), self)
+        self._act_undo.setShortcut(QKeySequence.StandardKey.Undo)
+        self._act_undo.triggered.connect(self._undo)
+        self._edit_menu.addAction(self._act_undo)
+
+        self._act_redo = QAction(self._t("action_redo"), self)
+        self._act_redo.setShortcut(QKeySequence.StandardKey.Redo)
+        self._act_redo.triggered.connect(self._redo)
+        self._edit_menu.addAction(self._act_redo)
+
+        self._edit_menu.addSeparator()
+
         self._act_add_section = QAction(self._t("action_add_section"), self)
         self._act_add_section.triggered.connect(self._add_section_to_current_tab)
         self._edit_menu.addAction(self._act_add_section)
@@ -1664,6 +1729,16 @@ class MainWindow(QMainWindow):
         if tab is not None:
             tab.set_export_format(self._current_format)
 
+    def _undo(self) -> None:
+        tab = self._current_tab()
+        if tab is not None:
+            tab.undo()
+
+    def _redo(self) -> None:
+        tab = self._current_tab()
+        if tab is not None:
+            tab.redo()
+
     def _add_section_to_current_tab(self) -> None:
         tab = self._current_tab()
         if tab is not None:
@@ -1777,6 +1852,7 @@ class MainWindow(QMainWindow):
                 else selected.lower() == search_text.lower()
             )
             if matches:
+                tab.push_undo_state()
                 cursor.insertText(replace_text)
                 tab.sync_doc_from_preview()
         self._find_next()
@@ -1802,6 +1878,7 @@ class MainWindow(QMainWindow):
             new_text = pattern.sub(replace_text, text)
             count = len(pattern.findall(text))
         if count > 0:
+            tab.push_undo_state()
             tab.preview_edit.setPlainText(new_text)
             tab.sync_doc_from_preview()
             self._find_replace_dialog.set_status(self._t("find_replace_count", count=count))

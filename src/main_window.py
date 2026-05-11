@@ -767,6 +767,8 @@ class MainWindow(QMainWindow):
         self._find_dialog: Optional[FindDialog] = None
         self._find_replace_dialog: Optional[FindReplaceDialog] = None
         self._last_tree_match: Optional[QTreeWidgetItem] = None
+        self._syncing = False
+        self._last_synced_section: Optional[str] = None
 
         self._build_ui()
         self._build_menu()
@@ -957,6 +959,10 @@ class MainWindow(QMainWindow):
         splitter.addWidget(self._tabs)
         splitter.setSizes([420, 780])
         root_layout.addWidget(splitter, 1)
+
+        self._preview_edit.verticalScrollBar().valueChanged.connect(self._on_preview_scrolled)
+        self._tree.verticalScrollBar().valueChanged.connect(self._on_tree_scrolled)
+        self._tree.currentItemChanged.connect(self._on_tree_current_changed)
 
     def _update_logo_pixmap(self) -> None:
         if self._logo_pixmap is None or self._logo_label is None:
@@ -1613,6 +1619,88 @@ class MainWindow(QMainWindow):
             else:
                 return search_text.lower() in text.lower()
     
+    def _on_preview_scrolled(self) -> None:
+        if self._syncing or self._current_format != ExportFormat.INI or self._doc is None:
+            return
+        line_no = self._preview_edit.firstVisibleBlock().blockNumber()
+        lines = self._preview_edit.document().toPlainText().splitlines()
+        current_section_name: Optional[str] = None
+        for i in range(min(line_no, len(lines) - 1), -1, -1):
+            stripped = lines[i].strip()
+            if stripped.startswith("[") and "]" in stripped:
+                current_section_name = stripped[1 : stripped.index("]")]
+                break
+        if current_section_name is None or current_section_name == self._last_synced_section:
+            return
+        self._last_synced_section = current_section_name
+        for idx in range(self._tree.topLevelItemCount()):
+            sec_item = self._tree.topLevelItem(idx)
+            sec_data = sec_item.data(0, Qt.ItemDataRole.UserRole)
+            if hasattr(sec_data, "name") and sec_data.name == current_section_name:
+                self._syncing = True
+                self._tree.scrollToItem(sec_item, QAbstractItemView.ScrollHint.EnsureVisible)
+                self._syncing = False
+                break
+
+    def _scroll_preview_to_item(self, item: QTreeWidgetItem) -> None:
+        """Scroll the preview to the line that corresponds to the given tree item."""
+        data = item.data(0, Qt.ItemDataRole.UserRole)
+        if data is None:
+            return
+        if hasattr(data, "name"):
+            section_name: str = data.name
+            key: Optional[str] = None
+        elif hasattr(data, "key"):
+            parent = item.parent()
+            if parent is None:
+                return
+            sec_data = parent.data(0, Qt.ItemDataRole.UserRole)
+            if not hasattr(sec_data, "name"):
+                return
+            section_name = sec_data.name
+            key = data.key
+        else:
+            return
+        lines = self._preview_edit.document().toPlainText().splitlines()
+        target_line: Optional[int] = None
+        current_section: Optional[str] = None
+        for i, line in enumerate(lines):
+            stripped = line.strip()
+            if stripped.startswith("[") and "]" in stripped:
+                current_section = stripped[1 : stripped.index("]")]
+                if current_section == section_name and key is None:
+                    target_line = i
+                    break
+            elif (
+                current_section == section_name
+                and key is not None
+                and "=" in stripped
+                and not stripped.startswith(";")
+                and not stripped.startswith("#")
+            ):
+                if stripped.split("=", 1)[0].strip() == key:
+                    target_line = i
+                    break
+        if target_line is None:
+            return
+        self._syncing = True
+        self._last_synced_section = section_name
+        self._preview_edit.verticalScrollBar().setValue(target_line)
+        self._syncing = False
+
+    def _on_tree_scrolled(self) -> None:
+        if self._syncing or self._current_format != ExportFormat.INI or self._doc is None:
+            return
+        item = self._tree.itemAt(0, 0)
+        if item is None:
+            return
+        self._scroll_preview_to_item(item)
+
+    def _on_tree_current_changed(self, item: Optional[QTreeWidgetItem], _: Optional[QTreeWidgetItem]) -> None:
+        if self._syncing or self._current_format != ExportFormat.INI or item is None or self._doc is None:
+            return
+        self._scroll_preview_to_item(item)
+
     def _on_find_triggered(self, count: int) -> None:
         """Slot for find dialog signals"""
         pass

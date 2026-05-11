@@ -72,7 +72,7 @@ Ein kommentarerhaltender INI-Datei-Editor mit **PyQt6-GUI**, flexibler Sortierun
 ### Option A – direkt aus dem Repository
 
 ```bash
-git clone https://
+git clone https://github.com/Helferlein21963/ini-file-editor.git
 cd ini-file-editor
 
 # Virtuelle Umgebung empfohlen
@@ -84,7 +84,7 @@ pip install -r requirements.txt
 
 ### Option C – vorkompiliertes Binary (Releases-Seite)
 
-Laden Sie das passende Binary von der [DevOps Releases](https://) Seite herunter – kein Python-Setup erforderlich.
+Laden Sie das passende Binary von der [Releases](https://github.com/Helferlein21963/ini-file-editor/releases) Seite herunter – kein Python-Setup erforderlich.
 
 ---
 

@@ -117,14 +117,13 @@ TRANSLATIONS = {
         "find_label": "Suchtext:",
         "find_case_sensitive": "Groß-/Kleinschreibung beachten",
         "find_whole_words": "Ganze Wörter",
-        "find_in_preview": "In Vorschau suchen",
-        "find_in_tree": "In Struktur suchen",
         "find_next": "Nächstes",
         "find_prev": "Vorheriges",
         "find_not_found": "Suchtext nicht gefunden",
         "find_count": "{count} Treffer gefunden",
         "find_replace_title": "Suchen & Ersetzen",
         "find_replace_label": "Ersetzen durch:",
+        "find_replace_one": "Ersetzen",
         "find_replace_all": "Alle ersetzen",
         "find_replace_count": "{count} Einträge ersetzt",
     },
@@ -209,14 +208,13 @@ TRANSLATIONS = {
         "find_label": "Search text:",
         "find_case_sensitive": "Case sensitive",
         "find_whole_words": "Whole words",
-        "find_in_preview": "Find in preview",
-        "find_in_tree": "Find in structure",
         "find_next": "Next",
         "find_prev": "Previous",
         "find_not_found": "Search text not found",
         "find_count": "{count} matches found",
         "find_replace_title": "Find & Replace",
         "find_replace_label": "Replace with:",
+        "find_replace_one": "Replace",
         "find_replace_all": "Replace all",
         "find_replace_count": "{count} entries replaced",
     },
@@ -588,15 +586,6 @@ class FindDialog(QDialog):
         options_layout.addStretch()
         layout.addLayout(options_layout)
         
-        # Search scope
-        scope_layout = QHBoxLayout()
-        self._scope_combo = QComboBox()
-        self._scope_combo.addItem(translate(language, "find_in_preview"))
-        self._scope_combo.addItem(translate(language, "find_in_tree"))
-        scope_layout.addWidget(self._scope_combo)
-        scope_layout.addStretch()
-        layout.addLayout(scope_layout)
-        
         # Buttons
         buttons_layout = QHBoxLayout()
         self._prev_btn = QPushButton(translate(language, "find_prev"))
@@ -624,12 +613,6 @@ class FindDialog(QDialog):
         self._whole_words_check.setText(translate(language, "find_whole_words"))
         self._prev_btn.setText(translate(language, "find_prev"))
         self._next_btn.setText(translate(language, "find_next"))
-        # Update scope combo items
-        self._scope_combo.blockSignals(True)
-        self._scope_combo.clear()
-        self._scope_combo.addItem(translate(language, "find_in_preview"))
-        self._scope_combo.addItem(translate(language, "find_in_tree"))
-        self._scope_combo.blockSignals(False)
     
     def get_search_text(self) -> str:
         return self._search_edit.text()
@@ -639,9 +622,6 @@ class FindDialog(QDialog):
     
     def is_whole_words(self) -> bool:
         return self._whole_words_check.isChecked()
-    
-    def get_scope(self) -> str:
-        return self._scope_combo.currentText()
     
     def set_status(self, message: str) -> None:
         self._status_label.setText(message)
@@ -706,7 +686,7 @@ class FindReplaceDialog(QDialog):
         self._prev_btn.clicked.connect(self._find_prev)
         self._next_btn = QPushButton(translate(language, "find_next"))
         self._next_btn.clicked.connect(self._find_next)
-        self._replace_btn = QPushButton(translate(language, "find_next"))
+        self._replace_btn = QPushButton(translate(language, "find_replace_one"))
         self._replace_btn.clicked.connect(self._replace_next)
         self._replace_all_btn = QPushButton(translate(language, "find_replace_all"))
         self._replace_all_btn.clicked.connect(self._replace_all)
@@ -734,7 +714,7 @@ class FindReplaceDialog(QDialog):
         self._whole_words_check.setText(translate(language, "find_whole_words"))
         self._prev_btn.setText(translate(language, "find_prev"))
         self._next_btn.setText(translate(language, "find_next"))
-        self._replace_btn.setText(translate(language, "find_next"))  # This should be "Replace" but using find_next as placeholder
+        self._replace_btn.setText(translate(language, "find_replace_one"))
         self._replace_all_btn.setText(translate(language, "find_replace_all"))
     
     def get_search_text(self) -> str:
@@ -786,6 +766,7 @@ class MainWindow(QMainWindow):
         self._language = Language.EN
         self._find_dialog: Optional[FindDialog] = None
         self._find_replace_dialog: Optional[FindReplaceDialog] = None
+        self._last_tree_match: Optional[QTreeWidgetItem] = None
 
         self._build_ui()
         self._build_menu()
@@ -1376,49 +1357,49 @@ class MainWindow(QMainWindow):
         
         case_sensitive = dialog.is_case_sensitive()
         whole_words = dialog.is_whole_words()
-        
-        # Get scope from find dialog, or default to preview for find_replace
-        scope = dialog.get_scope() if isinstance(dialog, FindDialog) else "preview"
-        
-        # Search in preview tab (QPlainTextEdit)
-        if scope == translate(self._language, "find_in_preview") or isinstance(dialog, FindReplaceDialog):
-            count = self._search_in_text_edit(self._preview_edit, search_text, case_sensitive, whole_words, forward=True)
-        else:
-            # Search in tree
-            count = self._search_in_tree(search_text, case_sensitive, whole_words)
-        
+
+        count = self._search_in_text_edit(self._preview_edit, search_text, case_sensitive, whole_words, forward=True)
+
         if count == 0:
             dialog.set_status(self._t("find_not_found"))
         else:
             dialog.set_status(self._t("find_count", count=count))
-    
+
     def _find_prev(self) -> None:
         """Search for the previous occurrence"""
         dialog = self._find_dialog if self._find_dialog and self._find_dialog.isVisible() else self._find_replace_dialog
         if dialog is None or not dialog.isVisible():
             return
-        
+
         search_text = dialog.get_search_text()
         if not search_text:
             dialog.set_status("")
             return
-        
+
         case_sensitive = dialog.is_case_sensitive()
         whole_words = dialog.is_whole_words()
-        
-        scope = dialog.get_scope() if isinstance(dialog, FindDialog) else "preview"
-        
-        # Search backward
-        if scope == translate(self._language, "find_in_preview") or isinstance(dialog, FindReplaceDialog):
-            count = self._search_in_text_edit(self._preview_edit, search_text, case_sensitive, whole_words, forward=False)
-        else:
-            count = self._search_in_tree(search_text, case_sensitive, whole_words)
-        
+
+        count = self._search_in_text_edit(self._preview_edit, search_text, case_sensitive, whole_words, forward=False)
+
         if count == 0:
             dialog.set_status(self._t("find_not_found"))
         else:
             dialog.set_status(self._t("find_count", count=count))
     
+    def _sync_doc_from_preview(self) -> None:
+        """Re-parse the preview text into self._doc and refresh the tree."""
+        text = self._preview_edit.document().toPlainText()
+        try:
+            new_doc = IniParser.parse_string(text)
+            new_doc.source_path = self._doc.source_path if self._doc else None
+            self._doc = new_doc
+            self._tree.load_document(self._doc)
+            self._tree.set_sort_mode(self._current_sort)
+        except Exception:
+            pass
+        self._dirty = True
+        self._update_title()
+
     def _replace_next(self) -> None:
         """Replace the current selection and find next"""
         if self._find_replace_dialog is None or not self._find_replace_dialog.isVisible():
@@ -1436,9 +1417,8 @@ class MainWindow(QMainWindow):
             selected = cursor.selectedText()
             if selected == search_text or (not self._find_replace_dialog.is_case_sensitive() and selected.lower() == search_text.lower()):
                 cursor.insertText(replace_text)
-                self._dirty = True
-                self._update_title()
-        
+                self._sync_doc_from_preview()
+
         # Find next occurrence
         self._find_next()
     
@@ -1471,32 +1451,48 @@ class MainWindow(QMainWindow):
         
         if count > 0:
             self._preview_edit.setPlainText(new_text)
-            self._dirty = True
-            self._update_title()
+            self._sync_doc_from_preview()
             self._find_replace_dialog.set_status(self._t("find_replace_count", count=count))
         else:
             self._find_replace_dialog.set_status(self._t("find_not_found"))
     
-    def _search_in_text_edit(self, text_edit: QPlainTextEdit, search_text: str, case_sensitive: bool, whole_words: bool, forward: bool = True) -> int:
-        """Search in a QPlainTextEdit and highlight matches. Returns count of matches."""
+    def _count_all_in_text_edit(self, text_edit: QPlainTextEdit, search_text: str, case_sensitive: bool, whole_words: bool) -> int:
+        """Count all occurrences of search_text in a QPlainTextEdit."""
         from PyQt6.QtGui import QTextCursor, QTextDocument
-        
+
+        doc = text_edit.document()
+        options = QTextDocument.FindFlag(0)
+        if case_sensitive:
+            options |= QTextDocument.FindFlag.FindCaseSensitively
+        if whole_words:
+            options |= QTextDocument.FindFlag.FindWholeWords
+
+        count = 0
+        cursor = QTextCursor(doc)
+        while True:
+            cursor = doc.find(search_text, cursor, options)
+            if cursor.isNull():
+                break
+            count += 1
+        return count
+
+    def _search_in_text_edit(self, text_edit: QPlainTextEdit, search_text: str, case_sensitive: bool, whole_words: bool, forward: bool = True) -> int:
+        """Navigate to next/prev match. Returns total number of matches."""
+        from PyQt6.QtGui import QTextCursor, QTextDocument
+
         doc = text_edit.document()
         cursor = text_edit.textCursor()
-        
-        # Find options
-        options = QTextDocument.FindOption(0)
+
+        options = QTextDocument.FindFlag(0)
         if case_sensitive:
-            options |= QTextDocument.FindOption.FindCaseSensitively
+            options |= QTextDocument.FindFlag.FindCaseSensitively
         if whole_words:
-            options |= QTextDocument.FindOption.FindWholeWords
-        
+            options |= QTextDocument.FindFlag.FindWholeWords
         if not forward:
-            options |= QTextDocument.FindOption.FindBackward
-        
-        # Search
+            options |= QTextDocument.FindFlag.FindBackward
+
         found_cursor = doc.find(search_text, cursor, options)
-        
+
         if found_cursor.isNull():
             # Try wrapping around
             if forward:
@@ -1504,13 +1500,75 @@ class MainWindow(QMainWindow):
             else:
                 cursor.movePosition(QTextCursor.MoveOperation.End)
             found_cursor = doc.find(search_text, cursor, options)
-        
+
         if not found_cursor.isNull():
             text_edit.setTextCursor(found_cursor)
-            return 1
-        
+            if text_edit is self._preview_edit and self._current_format == ExportFormat.INI:
+                self._sync_tree_to_preview_match(found_cursor)
+            return self._count_all_in_text_edit(text_edit, search_text, case_sensitive, whole_words)
+
         return 0
     
+    def _sync_tree_to_preview_match(self, cursor) -> None:
+        """Select the tree item that corresponds to the cursor position in the preview."""
+        line_no = cursor.blockNumber()
+        lines = self._preview_edit.document().toPlainText().splitlines()
+
+        current_section_name: Optional[str] = None
+        matched_key: Optional[str] = None
+
+        for i, line in enumerate(lines[: line_no + 1]):
+            stripped = line.strip()
+            if stripped.startswith("[") and "]" in stripped:
+                current_section_name = stripped[1 : stripped.index("]")]
+                if i == line_no:
+                    matched_key = None
+            elif (
+                "=" in stripped
+                and not stripped.startswith(";")
+                and not stripped.startswith("#")
+                and i == line_no
+            ):
+                matched_key = stripped.split("=", 1)[0].strip()
+
+        if current_section_name is None:
+            return
+
+        from PyQt6.QtGui import QBrush, QPalette
+        from PyQt6.QtWidgets import QApplication
+        palette = QApplication.palette()
+        highlight = palette.color(QPalette.ColorGroup.Active, QPalette.ColorRole.Highlight)
+        col_count = self._tree.columnCount()
+
+        # Clear previous match background
+        if self._last_tree_match is not None:
+            for c in range(col_count):
+                self._last_tree_match.setBackground(c, QBrush())
+            self._last_tree_match = None
+
+        match_item: Optional[QTreeWidgetItem] = None
+        for idx in range(self._tree.topLevelItemCount()):
+            sec_item = self._tree.topLevelItem(idx)
+            sec_data = sec_item.data(0, Qt.ItemDataRole.UserRole)
+            if not hasattr(sec_data, "name") or sec_data.name != current_section_name:
+                continue
+            if matched_key is None:
+                match_item = sec_item
+            else:
+                for j in range(sec_item.childCount()):
+                    entry_item = sec_item.child(j)
+                    entry_data = entry_item.data(0, Qt.ItemDataRole.UserRole)
+                    if hasattr(entry_data, "key") and entry_data.key == matched_key:
+                        match_item = entry_item
+                        break
+            break
+
+        if match_item is not None:
+            for c in range(col_count):
+                match_item.setBackground(c, QBrush(highlight))
+            self._tree.scrollToItem(match_item)
+            self._last_tree_match = match_item
+
     def _search_in_tree(self, search_text: str, case_sensitive: bool, whole_words: bool) -> int:
         """Search in tree and highlight matching items"""
         count = 0

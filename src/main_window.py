@@ -563,155 +563,107 @@ class IniTreeWidget(QTreeWidget):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Find dialog
+# Find / Replace bar  (embedded panel at the bottom of the main window)
 # ─────────────────────────────────────────────────────────────────────────────
-class FindDialog(QDialog):
-    found = pyqtSignal(int)
+class FindBar(QWidget):
+    find_next_requested = pyqtSignal()
+    find_prev_requested = pyqtSignal()
+    replace_requested = pyqtSignal()
+    replace_all_requested = pyqtSignal()
 
     def __init__(self, language: Language, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
-        self._language = language
-        self.setWindowTitle(translate(language, "find_title"))
-        self.setMinimumWidth(400)
-        self.setWindowModality(Qt.WindowModality.NonModal)
+        self.setVisible(False)
 
-        layout = QVBoxLayout(self)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(6, 3, 6, 3)
+        outer.setSpacing(2)
 
-        search_layout = QHBoxLayout()
+        # ── Find row ──────────────────────────────────────────────────────
+        find_row = QHBoxLayout()
+        find_row.setSpacing(4)
+
         self._search_label = QLabel(translate(language, "find_label"))
         self._search_edit = QLineEdit()
-        self._search_edit.returnPressed.connect(self._find_next)
-        search_layout.addWidget(self._search_label)
-        search_layout.addWidget(self._search_edit)
-        layout.addLayout(search_layout)
+        self._search_edit.setMinimumWidth(200)
+        self._search_edit.returnPressed.connect(self.find_next_requested)
 
-        options_layout = QHBoxLayout()
+        _emoji_font = QFont()
+        _emoji_font.setPointSize(15)
+
+        self._prev_btn = QPushButton("◀")
+        self._prev_btn.setFont(_emoji_font)
+        self._prev_btn.setFixedSize(38, 28)
+        self._prev_btn.clicked.connect(self.find_prev_requested)
+
+        self._next_btn = QPushButton("▶")
+        self._next_btn.setFont(_emoji_font)
+        self._next_btn.setFixedSize(38, 28)
+        self._next_btn.clicked.connect(self.find_next_requested)
+
         self._case_check = QCheckBox(translate(language, "find_case_sensitive"))
         self._whole_words_check = QCheckBox(translate(language, "find_whole_words"))
-        options_layout.addWidget(self._case_check)
-        options_layout.addWidget(self._whole_words_check)
-        options_layout.addStretch()
-        layout.addLayout(options_layout)
-
-        buttons_layout = QHBoxLayout()
-        self._prev_btn = QPushButton(translate(language, "find_prev"))
-        self._prev_btn.clicked.connect(self._find_prev)
-        self._next_btn = QPushButton(translate(language, "find_next"))
-        self._next_btn.clicked.connect(self._find_next)
-        self._close_btn = QPushButton("Close")
-        self._close_btn.clicked.connect(self.close)
-        buttons_layout.addWidget(self._prev_btn)
-        buttons_layout.addWidget(self._next_btn)
-        buttons_layout.addStretch()
-        buttons_layout.addWidget(self._close_btn)
-        layout.addLayout(buttons_layout)
 
         self._status_label = QLabel("")
-        layout.addWidget(self._status_label)
+        self._status_label.setMinimumWidth(160)
 
-    def set_language(self, language: Language) -> None:
-        self._language = language
-        self.setWindowTitle(translate(language, "find_title"))
-        self._search_label.setText(translate(language, "find_label"))
-        self._case_check.setText(translate(language, "find_case_sensitive"))
-        self._whole_words_check.setText(translate(language, "find_whole_words"))
-        self._prev_btn.setText(translate(language, "find_prev"))
-        self._next_btn.setText(translate(language, "find_next"))
+        self._close_btn = QPushButton("✖")
+        self._close_btn.setFont(_emoji_font)
+        self._close_btn.setFixedSize(38, 28)
+        self._close_btn.clicked.connect(self.hide)
 
-    def get_search_text(self) -> str:
-        return self._search_edit.text()
+        find_row.addWidget(self._search_label)
+        find_row.addWidget(self._search_edit)
+        find_row.addWidget(self._prev_btn)
+        find_row.addWidget(self._next_btn)
+        find_row.addSpacing(8)
+        find_row.addWidget(self._case_check)
+        find_row.addWidget(self._whole_words_check)
+        find_row.addSpacing(8)
+        find_row.addWidget(self._status_label, 1)
+        find_row.addWidget(self._close_btn)
+        outer.addLayout(find_row)
 
-    def is_case_sensitive(self) -> bool:
-        return self._case_check.isChecked()
+        # ── Replace row (hidden in find-only mode) ────────────────────────
+        self._replace_widget = QWidget()
+        replace_row = QHBoxLayout(self._replace_widget)
+        replace_row.setContentsMargins(0, 0, 0, 0)
+        replace_row.setSpacing(4)
 
-    def is_whole_words(self) -> bool:
-        return self._whole_words_check.isChecked()
-
-    def set_status(self, message: str) -> None:
-        self._status_label.setText(message)
-
-    def _find_next(self) -> None:
-        pass
-
-    def _find_prev(self) -> None:
-        pass
-
-    def closeEvent(self, event) -> None:  # type: ignore[override]
-        self._search_edit.clear()
-        self._status_label.clear()
-        super().closeEvent(event)
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Find & Replace dialog
-# ─────────────────────────────────────────────────────────────────────────────
-class FindReplaceDialog(QDialog):
-    def __init__(self, language: Language, parent: Optional[QWidget] = None) -> None:
-        super().__init__(parent)
-        self._language = language
-        self.setWindowTitle(translate(language, "find_replace_title"))
-        self.setMinimumWidth(450)
-        self.setWindowModality(Qt.WindowModality.NonModal)
-
-        layout = QVBoxLayout(self)
-
-        search_layout = QHBoxLayout()
-        self._search_label = QLabel(translate(language, "find_label"))
-        self._search_edit = QLineEdit()
-        self._search_edit.returnPressed.connect(self._find_next)
-        search_layout.addWidget(self._search_label)
-        search_layout.addWidget(self._search_edit)
-        layout.addLayout(search_layout)
-
-        replace_layout = QHBoxLayout()
         self._replace_label = QLabel(translate(language, "find_replace_label"))
         self._replace_edit = QLineEdit()
-        self._replace_edit.returnPressed.connect(self._replace_next)
-        replace_layout.addWidget(self._replace_label)
-        replace_layout.addWidget(self._replace_edit)
-        layout.addLayout(replace_layout)
+        self._replace_edit.setMinimumWidth(200)
+        self._replace_edit.returnPressed.connect(self.replace_requested)
 
-        options_layout = QHBoxLayout()
-        self._case_check = QCheckBox(translate(language, "find_case_sensitive"))
-        self._whole_words_check = QCheckBox(translate(language, "find_whole_words"))
-        options_layout.addWidget(self._case_check)
-        options_layout.addWidget(self._whole_words_check)
-        options_layout.addStretch()
-        layout.addLayout(options_layout)
-
-        buttons_layout = QHBoxLayout()
-        self._prev_btn = QPushButton(translate(language, "find_prev"))
-        self._prev_btn.clicked.connect(self._find_prev)
-        self._next_btn = QPushButton(translate(language, "find_next"))
-        self._next_btn.clicked.connect(self._find_next)
         self._replace_btn = QPushButton(translate(language, "find_replace_one"))
-        self._replace_btn.clicked.connect(self._replace_next)
+        self._replace_btn.clicked.connect(self.replace_requested)
         self._replace_all_btn = QPushButton(translate(language, "find_replace_all"))
-        self._replace_all_btn.clicked.connect(self._replace_all)
-        self._close_btn = QPushButton("Close")
-        self._close_btn.clicked.connect(self.close)
-        buttons_layout.addWidget(self._prev_btn)
-        buttons_layout.addWidget(self._next_btn)
-        buttons_layout.addWidget(self._replace_btn)
-        buttons_layout.addWidget(self._replace_all_btn)
-        buttons_layout.addStretch()
-        buttons_layout.addWidget(self._close_btn)
-        layout.addLayout(buttons_layout)
+        self._replace_all_btn.clicked.connect(self.replace_all_requested)
 
-        self._status_label = QLabel("")
-        layout.addWidget(self._status_label)
+        replace_row.addWidget(self._replace_label)
+        replace_row.addWidget(self._replace_edit)
+        replace_row.addWidget(self._replace_btn)
+        replace_row.addWidget(self._replace_all_btn)
+        replace_row.addStretch()
+        outer.addWidget(self._replace_widget)
 
-    def set_language(self, language: Language) -> None:
-        self._language = language
-        self.setWindowTitle(translate(language, "find_replace_title"))
-        self._search_label.setText(translate(language, "find_label"))
-        self._replace_label.setText(translate(language, "find_replace_label"))
-        self._case_check.setText(translate(language, "find_case_sensitive"))
-        self._whole_words_check.setText(translate(language, "find_whole_words"))
-        self._prev_btn.setText(translate(language, "find_prev"))
-        self._next_btn.setText(translate(language, "find_next"))
-        self._replace_btn.setText(translate(language, "find_replace_one"))
-        self._replace_all_btn.setText(translate(language, "find_replace_all"))
+        self._replace_widget.setVisible(False)
+
+    # ── Public interface ──────────────────────────────────────────────────
+    def show_find(self) -> None:
+        self._replace_widget.setVisible(False)
+        self.setVisible(True)
+        self._search_edit.setFocus()
+        self._search_edit.selectAll()
+
+    def show_replace(self) -> None:
+        self._replace_widget.setVisible(True)
+        self.setVisible(True)
+        self._search_edit.setFocus()
+        self._search_edit.selectAll()
+
+    def is_replace_mode(self) -> bool:
+        return self._replace_widget.isVisible()
 
     def get_search_text(self) -> str:
         return self._search_edit.text()
@@ -728,23 +680,20 @@ class FindReplaceDialog(QDialog):
     def set_status(self, message: str) -> None:
         self._status_label.setText(message)
 
-    def _find_next(self) -> None:
-        pass
+    def set_language(self, language: Language) -> None:
+        self._search_label.setText(translate(language, "find_label"))
+        self._prev_btn.setToolTip(translate(language, "find_prev"))
+        self._next_btn.setToolTip(translate(language, "find_next"))
+        self._case_check.setText(translate(language, "find_case_sensitive"))
+        self._whole_words_check.setText(translate(language, "find_whole_words"))
+        self._replace_label.setText(translate(language, "find_replace_label"))
+        self._replace_btn.setText(translate(language, "find_replace_one"))
+        self._replace_all_btn.setText(translate(language, "find_replace_all"))
 
-    def _find_prev(self) -> None:
-        pass
-
-    def _replace_next(self) -> None:
-        pass
-
-    def _replace_all(self) -> None:
-        pass
-
-    def closeEvent(self, event) -> None:  # type: ignore[override]
-        self._search_edit.clear()
-        self._replace_edit.clear()
-        self._status_label.clear()
-        super().closeEvent(event)
+    def keyPressEvent(self, event) -> None:  # type: ignore[override]
+        if event.key() == Qt.Key.Key_Escape:
+            self.hide()
+        super().keyPressEvent(event)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1105,9 +1054,6 @@ class MainWindow(QMainWindow):
         self._current_sort = SortMode.NONE
         self._current_format = ExportFormat.INI
         self._language = Language.EN
-        self._find_dialog: Optional[FindDialog] = None
-        self._find_replace_dialog: Optional[FindReplaceDialog] = None
-
         self._build_ui()
         self._build_menu()
         self._build_toolbar()
@@ -1285,10 +1231,7 @@ class MainWindow(QMainWindow):
             tab = self._file_tabs.widget(i)
             if isinstance(tab, DocumentTab):
                 tab.set_language(self._language)
-        if self._find_dialog is not None:
-            self._find_dialog.set_language(self._language)
-        if self._find_replace_dialog is not None:
-            self._find_replace_dialog.set_language(self._language)
+        self._find_bar.set_language(self._language)
         self._update_translations()
         tab = self._current_tab()
         if tab is not None:
@@ -1366,6 +1309,14 @@ class MainWindow(QMainWindow):
         self._file_tabs.tabCloseRequested.connect(self._close_tab)
         self._file_tabs.currentChanged.connect(self._on_file_tab_changed)
         root_layout.addWidget(self._file_tabs, 1)
+
+        # Find / Replace bar (hidden until triggered)
+        self._find_bar = FindBar(self._language)
+        self._find_bar.find_next_requested.connect(self._find_next)
+        self._find_bar.find_prev_requested.connect(self._find_prev)
+        self._find_bar.replace_requested.connect(self._replace_next)
+        self._find_bar.replace_all_requested.connect(self._replace_all)
+        root_layout.addWidget(self._find_bar)
 
         # Start with one empty tab
         self._new_tab()
@@ -1762,85 +1713,51 @@ class MainWindow(QMainWindow):
 
     # ── Find & Replace ────────────────────────────────────────────────────
     def _show_find_dialog(self) -> None:
-        if self._find_dialog is None:
-            self._find_dialog = FindDialog(self._language, self)
-            self._find_dialog.found.connect(lambda _: None)
-            self._find_dialog._next_btn.clicked.disconnect()
-            self._find_dialog._prev_btn.clicked.disconnect()
-            self._find_dialog._next_btn.clicked.connect(self._find_next)
-            self._find_dialog._prev_btn.clicked.connect(self._find_prev)
-        self._find_dialog.show()
-        self._find_dialog.raise_()
-        self._find_dialog.activateWindow()
-        self._find_dialog._search_edit.setFocus()
-        self._find_dialog._search_edit.selectAll()
+        self._find_bar.show_find()
 
     def _show_find_replace_dialog(self) -> None:
-        if self._find_replace_dialog is None:
-            self._find_replace_dialog = FindReplaceDialog(self._language, self)
-            self._find_replace_dialog._next_btn.clicked.disconnect()
-            self._find_replace_dialog._prev_btn.clicked.disconnect()
-            self._find_replace_dialog._replace_btn.clicked.disconnect()
-            self._find_replace_dialog._replace_all_btn.clicked.disconnect()
-            self._find_replace_dialog._next_btn.clicked.connect(self._find_next)
-            self._find_replace_dialog._prev_btn.clicked.connect(self._find_prev)
-            self._find_replace_dialog._replace_btn.clicked.connect(self._replace_next)
-            self._find_replace_dialog._replace_all_btn.clicked.connect(self._replace_all)
-        self._find_replace_dialog.show()
-        self._find_replace_dialog.raise_()
-        self._find_replace_dialog.activateWindow()
-        self._find_replace_dialog._search_edit.setFocus()
-        self._find_replace_dialog._search_edit.selectAll()
-
-    def _active_find_dialog(self) -> Optional[FindDialog]:
-        if self._find_dialog and self._find_dialog.isVisible():
-            return self._find_dialog
-        if self._find_replace_dialog and self._find_replace_dialog.isVisible():
-            return self._find_replace_dialog
-        return None
+        self._find_bar.show_replace()
 
     def _find_next(self) -> None:
-        dialog = self._active_find_dialog()
-        if dialog is None:
+        if not self._find_bar.isVisible():
             return
         tab = self._current_tab()
         if tab is None:
             return
-        search_text = dialog.get_search_text()
+        search_text = self._find_bar.get_search_text()
         if not search_text:
-            dialog.set_status("")
+            self._find_bar.set_status("")
             return
         count = self._search_in_text_edit(
             tab.preview_edit, search_text,
-            dialog.is_case_sensitive(), dialog.is_whole_words(), forward=True
+            self._find_bar.is_case_sensitive(), self._find_bar.is_whole_words(), forward=True
         )
-        dialog.set_status(self._t("find_count", count=count) if count else self._t("find_not_found"))
+        self._find_bar.set_status(self._t("find_count", count=count) if count else self._t("find_not_found"))
 
     def _find_prev(self) -> None:
-        dialog = self._active_find_dialog()
-        if dialog is None:
+        if not self._find_bar.isVisible():
             return
         tab = self._current_tab()
         if tab is None:
             return
-        search_text = dialog.get_search_text()
+        search_text = self._find_bar.get_search_text()
         if not search_text:
-            dialog.set_status("")
+            self._find_bar.set_status("")
             return
         count = self._search_in_text_edit(
             tab.preview_edit, search_text,
-            dialog.is_case_sensitive(), dialog.is_whole_words(), forward=False
+            self._find_bar.is_case_sensitive(), self._find_bar.is_whole_words(), forward=False
         )
-        dialog.set_status(self._t("find_count", count=count) if count else self._t("find_not_found"))
+        self._find_bar.set_status(self._t("find_count", count=count) if count else self._t("find_not_found"))
 
     def _replace_next(self) -> None:
-        if self._find_replace_dialog is None or not self._find_replace_dialog.isVisible():
+        if not self._find_bar.isVisible() or not self._find_bar.is_replace_mode():
             return
         tab = self._current_tab()
         if tab is None:
             return
-        search_text = self._find_replace_dialog.get_search_text()
-        replace_text = self._find_replace_dialog.get_replace_text()
+        search_text = self._find_bar.get_search_text()
+        replace_text = self._find_bar.get_replace_text()
         if not search_text:
             return
         cursor = tab.preview_edit.textCursor()
@@ -1848,7 +1765,7 @@ class MainWindow(QMainWindow):
             selected = cursor.selectedText()
             matches = (
                 selected == search_text
-                if self._find_replace_dialog.is_case_sensitive()
+                if self._find_bar.is_case_sensitive()
                 else selected.lower() == search_text.lower()
             )
             if matches:
@@ -1858,14 +1775,14 @@ class MainWindow(QMainWindow):
         self._find_next()
 
     def _replace_all(self) -> None:
-        if self._find_replace_dialog is None or not self._find_replace_dialog.isVisible():
+        if not self._find_bar.isVisible() or not self._find_bar.is_replace_mode():
             return
         tab = self._current_tab()
         if tab is None:
             return
-        search_text = self._find_replace_dialog.get_search_text()
-        replace_text = self._find_replace_dialog.get_replace_text()
-        case_sensitive = self._find_replace_dialog.is_case_sensitive()
+        search_text = self._find_bar.get_search_text()
+        replace_text = self._find_bar.get_replace_text()
+        case_sensitive = self._find_bar.is_case_sensitive()
         if not search_text:
             return
         text = tab.preview_edit.document().toPlainText()
@@ -1881,9 +1798,9 @@ class MainWindow(QMainWindow):
             tab.push_undo_state()
             tab.preview_edit.setPlainText(new_text)
             tab.sync_doc_from_preview()
-            self._find_replace_dialog.set_status(self._t("find_replace_count", count=count))
+            self._find_bar.set_status(self._t("find_replace_count", count=count))
         else:
-            self._find_replace_dialog.set_status(self._t("find_not_found"))
+            self._find_bar.set_status(self._t("find_not_found"))
 
     def _count_all_in_text_edit(
         self, text_edit: QPlainTextEdit, search_text: str, case_sensitive: bool, whole_words: bool

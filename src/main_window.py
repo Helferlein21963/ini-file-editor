@@ -10,7 +10,7 @@ from typing import Optional
 
 from PyQt6.QtCore import Qt, QUrl, pyqtSignal
 from PyQt6.QtGui import (
-    QAction, QColor, QDragEnterEvent, QDropEvent, QFont, QIcon, QKeySequence,
+    QAction, QBrush, QColor, QDragEnterEvent, QDropEvent, QFont, QIcon, QKeySequence,
     QPalette, QPixmap, QTextCharFormat, QSyntaxHighlighter,
 )
 from PyQt6.QtWidgets import (
@@ -30,6 +30,11 @@ except ModuleNotFoundError:
         ExportFormat, IniDocument, IniEntry, IniParser, IniSection, SortMode,
     )
 
+try:
+    from src.ini_diff import DiffStatus, IniDiff
+except ModuleNotFoundError:
+    from ini_diff import DiffStatus, IniDiff  # type: ignore[no-redef]
+
 
 class Language(Enum):
     DE = "de"
@@ -44,6 +49,7 @@ TRANSLATIONS = {
         "status_merged": "{count} INI-Datei(en) zusammengeführt.",
         "status_saved": "Gespeichert: {path}",
         "status_exported": "Exportiert nach: {path}",
+        "status_opened_multiple": "{count} Dateien geöffnet.",
         "sort_group": "🔀 Sortierung",
         "sort_none": "Keine Sortierung",
         "sort_sections": "Abschnitte alphabetisch",
@@ -133,6 +139,15 @@ TRANSLATIONS = {
         "find_replace_all": "Alle ersetzen",
         "find_replace_count": "{count} Einträge ersetzt",
         "tab_untitled": "Unbenannt",
+        "action_compare": "🔀 Dateien &vergleichen…",
+        "diff_select_title": "Dateien zum Vergleichen auswählen",
+        "diff_select_a": "Datei A (links):",
+        "diff_select_b": "Datei B (rechts):",
+        "diff_no_docs": "Mindestens zwei geöffnete Dokumente werden benötigt.",
+        "diff_same_doc": "Bitte zwei verschiedene Dokumente auswählen.",
+        "diff_col_key": "Abschnitt / Schlüssel",
+        "diff_only_diffs": "Nur Unterschiede zeigen",
+        "diff_summary": "{modified} geändert · {added} hinzugefügt · {removed} entfernt · {unchanged} identisch",
     },
     Language.EN: {
         "app_name": "ini-file-editor",
@@ -142,6 +157,7 @@ TRANSLATIONS = {
         "status_merged": "{count} INI file(s) merged.",
         "status_saved": "Saved: {path}",
         "status_exported": "Exported to: {path}",
+        "status_opened_multiple": "{count} files opened.",
         "sort_group": "🔀 Sorting",
         "sort_none": "No sorting",
         "sort_sections": "Sections alphabetically",
@@ -231,6 +247,15 @@ TRANSLATIONS = {
         "find_replace_all": "Replace all",
         "find_replace_count": "{count} entries replaced",
         "tab_untitled": "Untitled",
+        "action_compare": "🔀 &Compare files…",
+        "diff_select_title": "Select files to compare",
+        "diff_select_a": "File A (left):",
+        "diff_select_b": "File B (right):",
+        "diff_no_docs": "At least two open documents are required.",
+        "diff_same_doc": "Please select two different documents.",
+        "diff_col_key": "Section / Key",
+        "diff_only_diffs": "Show differences only",
+        "diff_summary": "{modified} modified · {added} added · {removed} removed · {unchanged} identical",
     },
 }
 
@@ -1044,6 +1069,229 @@ class DocumentTab(QSplitter):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Diff view – side-by-side comparison of two open documents
+# ─────────────────────────────────────────────────────────────────────────────
+class DiffTab(QWidget):
+    # Catppuccin-compatible diff colours
+    _BG_ADDED    = QColor("#1a3520")
+    _BG_REMOVED  = QColor("#3a1a22")
+    _BG_MODIFIED = QColor("#2e2a10")
+    _FG_ADDED    = QColor("#a6e3a1")
+    _FG_REMOVED  = QColor("#f38ba8")
+    _FG_MODIFIED = QColor("#f9e2af")
+
+    def __init__(
+        self,
+        tab_a: "DocumentTab",
+        tab_b: "DocumentTab",
+        language: Language,
+        parent: Optional[QWidget] = None,
+    ) -> None:
+        super().__init__(parent)
+        self._tab_a = tab_a
+        self._tab_b = tab_b
+        self._language = language
+        self._only_diffs = False
+        self._build_widgets()
+        # Live updates: refresh whenever either source document changes
+        self._tab_a.content_changed.connect(self.refresh)
+        self._tab_b.content_changed.connect(self.refresh)
+        self.refresh()
+
+    # ── Widget construction ───────────────────────────────────────────────
+    def _build_widgets(self) -> None:
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(6, 6, 6, 6)
+        layout.setSpacing(4)
+
+        # Header: filenames left / right
+        header = QHBoxLayout()
+        self._label_a = QLabel()
+        self._label_a.setStyleSheet("font-weight: bold; color: #89b4fa; padding: 2px 0;")
+        self._label_b = QLabel()
+        self._label_b.setStyleSheet("font-weight: bold; color: #a6e3a1; padding: 2px 0;")
+        header.addWidget(self._label_a)
+        header.addStretch()
+        header.addWidget(self._label_b)
+        layout.addLayout(header)
+
+        # Options / summary bar
+        opts = QHBoxLayout()
+        self._only_diffs_check = QCheckBox()
+        self._only_diffs_check.setChecked(False)
+        self._only_diffs_check.stateChanged.connect(self._on_toggle_filter)
+        opts.addWidget(self._only_diffs_check)
+        opts.addStretch()
+        self._summary_label = QLabel()
+        self._summary_label.setStyleSheet("color: #a6adc8; font-size: 12px;")
+        opts.addWidget(self._summary_label)
+        layout.addLayout(opts)
+
+        # Main tree: Section/Key | Value A | Value B | Status
+        self._tree = QTreeWidget()
+        self._tree.setColumnCount(4)
+        self._tree.setAlternatingRowColors(False)
+        self._tree.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        hdr = self._tree.header()
+        hdr.setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)
+        hdr.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        hdr.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
+        hdr.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
+        layout.addWidget(self._tree)
+
+        self._refresh_static_labels()
+
+    def _refresh_static_labels(self) -> None:
+        self._label_a.setText(f"A: {self._doc_name(self._tab_a)}")
+        self._label_b.setText(f"B: {self._doc_name(self._tab_b)}")
+        self._only_diffs_check.setText(translate(self._language, "diff_only_diffs"))
+        self._tree.setHeaderLabels([
+            translate(self._language, "diff_col_key"),
+            self._doc_name(self._tab_a),
+            self._doc_name(self._tab_b),
+            "",
+        ])
+
+    def _doc_name(self, tab: "DocumentTab") -> str:
+        try:
+            doc = tab.doc
+            if doc and doc.source_path:
+                return doc.source_path.name
+        except RuntimeError:
+            pass
+        return translate(self._language, "tab_untitled")
+
+    # ── Public API ────────────────────────────────────────────────────────
+    def set_language(self, language: Language) -> None:
+        self._language = language
+        self._refresh_static_labels()
+        self.refresh()
+
+    def refresh(self) -> None:
+        try:
+            doc_a = self._tab_a.doc
+            doc_b = self._tab_b.doc
+        except RuntimeError:
+            return
+        if doc_a is None or doc_b is None:
+            self._tree.clear()
+            return
+
+        # Apply tab_a's sort mode to both so the view matches the source tabs
+        sort_mode = self._tab_a.sort_mode
+        if sort_mode != SortMode.NONE:
+            doc_a = doc_a.sorted_copy(sort_mode)
+            doc_b = doc_b.sorted_copy(sort_mode)
+
+        diff = IniDiff.compare(doc_a, doc_b)
+        self._refresh_static_labels()
+        self._tree.clear()
+
+        for sec_diff in diff.sections:
+            if self._only_diffs and sec_diff.status == DiffStatus.UNCHANGED:
+                continue
+
+            sec_item = QTreeWidgetItem(self._tree)
+            sec_item.setText(0, f"[{sec_diff.name}]")
+            sec_item.setText(3, self._status_symbol(sec_diff.status))
+            font = QFont()
+            font.setBold(True)
+            sec_item.setFont(0, font)
+            self._colorize(sec_item, sec_diff.status, cols=(0, 3))
+
+            for ed in sec_diff.entries:
+                if self._only_diffs and ed.status == DiffStatus.UNCHANGED:
+                    continue
+                row = QTreeWidgetItem(sec_item)
+                row.setText(0, ed.key)
+                row.setText(1, ed.value_a or "")
+                row.setText(2, ed.value_b or "")
+                row.setText(3, self._status_symbol(ed.status))
+                self._colorize(row, ed.status, cols=range(4))
+
+            sec_item.setExpanded(True)
+
+        self._summary_label.setText(
+            translate(
+                self._language,
+                "diff_summary",
+                modified=diff.count_modified(),
+                added=diff.count_added(),
+                removed=diff.count_removed(),
+                unchanged=diff.count_unchanged(),
+            )
+        )
+
+    # ── Private helpers ───────────────────────────────────────────────────
+    def _on_toggle_filter(self) -> None:
+        self._only_diffs = self._only_diffs_check.isChecked()
+        self.refresh()
+
+    @staticmethod
+    def _status_symbol(status: DiffStatus) -> str:
+        return {
+            DiffStatus.ADDED:     "＋",
+            DiffStatus.REMOVED:   "－",
+            DiffStatus.MODIFIED:  "≠",
+            DiffStatus.UNCHANGED: "＝",
+        }[status]
+
+    def _colorize(self, item: QTreeWidgetItem, status: DiffStatus, cols) -> None:
+        if status == DiffStatus.UNCHANGED:
+            return
+        bg, fg = {
+            DiffStatus.ADDED:    (self._BG_ADDED,    self._FG_ADDED),
+            DiffStatus.REMOVED:  (self._BG_REMOVED,  self._FG_REMOVED),
+            DiffStatus.MODIFIED: (self._BG_MODIFIED, self._FG_MODIFIED),
+        }[status]
+        bg_brush = QBrush(bg)
+        fg_brush = QBrush(fg)
+        for c in cols:
+            item.setBackground(c, bg_brush)
+            item.setForeground(c, fg_brush)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Dialog for selecting which two documents to compare
+# ─────────────────────────────────────────────────────────────────────────────
+class DiffSelectDialog(QDialog):
+    def __init__(
+        self,
+        tabs: list[tuple[str, "DocumentTab"]],
+        language: Language,
+        parent: Optional[QWidget] = None,
+    ) -> None:
+        super().__init__(parent)
+        self.setWindowTitle(translate(language, "diff_select_title"))
+        self.setMinimumWidth(380)
+
+        layout = QVBoxLayout(self)
+        form = QFormLayout()
+
+        self._combo_a = QComboBox()
+        self._combo_b = QComboBox()
+        for label, tab in tabs:
+            self._combo_a.addItem(label, tab)
+            self._combo_b.addItem(label, tab)
+        if len(tabs) >= 2:
+            self._combo_b.setCurrentIndex(1)
+
+        form.addRow(translate(language, "diff_select_a"), self._combo_a)
+        form.addRow(translate(language, "diff_select_b"), self._combo_b)
+        layout.addLayout(form)
+
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+    def selected_tabs(self) -> tuple["DocumentTab", "DocumentTab"]:
+        return self._combo_a.currentData(), self._combo_b.currentData()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Main window
 # ─────────────────────────────────────────────────────────────────────────────
 class MainWindow(QMainWindow):
@@ -1202,6 +1450,7 @@ class MainWindow(QMainWindow):
         self._act_about.setText(self._t("action_about"))
         self._act_find.setText(self._t("action_find"))
         self._act_find_replace.setText(self._t("action_find_replace"))
+        self._act_compare.setText(self._t("action_compare"))
         if hasattr(self, '_toolbar'):
             self._toolbar.setWindowTitle(self._t("toolbar_name"))
             self._tb_open.setText(self._t("action_open"))
@@ -1233,6 +1482,10 @@ class MainWindow(QMainWindow):
                 tab.set_language(self._language)
         self._find_bar.set_language(self._language)
         self._update_translations()
+        for i in range(self._file_tabs.count()):
+            w = self._file_tabs.widget(i)
+            if isinstance(w, DiffTab):
+                w.set_language(self._language)
         tab = self._current_tab()
         if tab is not None:
             tab.load_into_ui()
@@ -1434,6 +1687,12 @@ class MainWindow(QMainWindow):
         self._act_find_replace.triggered.connect(self._show_find_replace_dialog)
         self._edit_menu.addAction(self._act_find_replace)
 
+        self._edit_menu.addSeparator()
+
+        self._act_compare = QAction(self._t("action_compare"), self)
+        self._act_compare.triggered.connect(self._open_diff_tab)
+        self._edit_menu.addAction(self._act_compare)
+
         self._view_menu = bar.addMenu(self._t("menu_view"))
         self._act_expand = QAction(self._t("action_expand"), self)
         self._act_expand.triggered.connect(self._expand_all)
@@ -1542,23 +1801,36 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, self._t("error_export"), self._t("error_open", exc=str(exc)))
             return False
 
+    def _open_file_paths(self, paths: list[str | Path]) -> None:
+        """Open each path in its own tab, reusing the current tab if it is a pristine empty tab."""
+        loaded = 0
+        for i, path in enumerate(paths):
+            path = str(path)
+            tab = self._current_tab()
+            if i == 0 and tab is not None and tab.doc is None and not tab.dirty:
+                if self._load_file_into_tab(path, tab):
+                    self._set_tab_title(self._file_tabs.currentIndex(), tab)
+                    loaded += 1
+            else:
+                tab = self._new_tab()
+                if self._load_file_into_tab(path, tab):
+                    self._set_tab_title(self._file_tabs.currentIndex(), tab)
+                    loaded += 1
+        if loaded == 0:
+            return
+        self._update_window_title()
+        if loaded > 1:
+            self.statusBar().showMessage(self._t("status_opened_multiple", count=loaded))
+        else:
+            self.statusBar().showMessage(self._t("status_loaded", path=str(paths[0])))
+
     def _open_file(self) -> None:
-        path, _ = QFileDialog.getOpenFileName(
+        paths, _ = QFileDialog.getOpenFileNames(
             self, self._t("open_file_title"), "",
             "INI-Dateien (*.ini *.cfg *.conf);;Alle Dateien (*)"
         )
-        if not path:
-            return
-        # Reuse current tab if it is a pristine empty tab
-        tab = self._current_tab()
-        if tab is not None and tab.doc is None and not tab.dirty:
-            if self._load_file_into_tab(path, tab):
-                idx = self._file_tabs.currentIndex()
-                self._set_tab_title(idx, tab)
-                self._update_window_title()
-                self.statusBar().showMessage(self._t("status_loaded", path=path))
-        else:
-            self._open_file_in_new_tab(path)
+        if paths:
+            self._open_file_paths(paths)
 
     def _open_file_in_new_tab(self, path: str = "") -> None:
         if not path:
@@ -1664,6 +1936,38 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage(self._t("status_exported", path=path))
         except Exception as exc:
             QMessageBox.critical(self, self._t("error_export"), str(exc))
+
+    # ── Compare / diff ────────────────────────────────────────────────────
+    def _open_diff_tab(self) -> None:
+        tabs_with_docs: list[tuple[str, DocumentTab]] = []
+        for i in range(self._file_tabs.count()):
+            w = self._file_tabs.widget(i)
+            if isinstance(w, DocumentTab) and w.doc is not None:
+                tabs_with_docs.append((self._file_tabs.tabText(i).rstrip(" *"), w))
+
+        if len(tabs_with_docs) < 2:
+            QMessageBox.information(
+                self, self._t("diff_select_title"), self._t("diff_no_docs")
+            )
+            return
+
+        dlg = DiffSelectDialog(tabs_with_docs, self._language, self)
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+
+        tab_a, tab_b = dlg.selected_tabs()
+        if tab_a is tab_b:
+            QMessageBox.warning(
+                self, self._t("diff_select_title"), self._t("diff_same_doc")
+            )
+            return
+
+        name_a = tab_a.doc.source_path.name if tab_a.doc and tab_a.doc.source_path else self._t("tab_untitled")
+        name_b = tab_b.doc.source_path.name if tab_b.doc and tab_b.doc.source_path else self._t("tab_untitled")
+
+        diff_widget = DiffTab(tab_a, tab_b, self._language)
+        idx = self._file_tabs.addTab(diff_widget, f"⇔ {name_a} ↔ {name_b}")
+        self._file_tabs.setCurrentIndex(idx)
 
     # ── Slots ─────────────────────────────────────────────────────────────
     def _on_sort_changed(self, idx: int) -> None:
@@ -1876,13 +2180,13 @@ class MainWindow(QMainWindow):
         event.acceptProposedAction()
 
     def dropEvent(self, event: QDropEvent) -> None:  # type: ignore[override]
-        for url in event.mimeData().urls():
-            if not self._is_valid_ini_url(url):
-                continue
-            path = Path(url.toLocalFile())
-            if self._is_file_already_open(path):
-                continue
-            self._open_file_in_new_tab(str(path))
+        valid_paths = [
+            Path(url.toLocalFile())
+            for url in event.mimeData().urls()
+            if self._is_valid_ini_url(url) and not self._is_file_already_open(Path(url.toLocalFile()))
+        ]
+        if valid_paths:
+            self._open_file_paths(valid_paths)
         event.acceptProposedAction()
 
     def closeEvent(self, event) -> None:  # type: ignore[override]

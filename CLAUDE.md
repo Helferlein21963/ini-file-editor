@@ -30,7 +30,7 @@ pytest tests/test_ini_parser.py::TestSorting -v
 # Run with coverage
 pytest --cov=src --cov-report=term-missing
 
-# Format / lint / type-check
+# Format / lint / type-check  (black uses line-length 100)
 black src/ tests/
 isort src/ tests/
 flake8 src/ tests/
@@ -72,11 +72,13 @@ Round-trip guarantee: parse → serialize → re-parse produces an identical doc
 ### 3. GUI Layer (`src/main_window.py`)
 
 - **`MainWindow`** — menu bar, toolbar, status bar, multi-tab file management with unsaved-changes guard
+- **`DocumentTab`** (`QSplitter`) — one instance per open file; owns the `IniTreeWidget`, preview `QPlainTextEdit`, header editor, and its own undo/redo stacks (`list[IniDocument]`). Undo is snapshot-based via `clone()`, not `QUndoStack`.
 - **`IniTreeWidget`** — hierarchical tree: sections → entries, with Catppuccin-inspired dark theme
+- **`IniHighlighter`** (`QSyntaxHighlighter`) — colors comments, section headers, keys, and values in the preview panel
+- **`FindBar`** — embedded bottom panel for Find and Find/Replace; operates on the **preview text**, then calls `DocumentTab.sync_doc_from_preview()` to re-parse and update the model
 - **Edit dialogs** (`EntryEditDialog`, `SectionEditDialog`) — modal dialogs for key/value/comment editing
-- **Format preview panel** — live right-side panel updating on every document change
 - **Bilingual UI** — German/English switching via `TRANSLATIONS` dict and `Language` enum; all UI strings must have entries for both languages
-- Features: Find/Replace, Undo/Redo (`QUndoStack`), Drag & Drop, Section merge, Sort dropdown
+- **Scroll sync** — when export format is INI, scrolling the tree scrolls the preview and vice-versa; disabled for non-INI formats
 
 Data flow: User edit → dialog → `IniDocument` mutated → `refresh_tree()` → preview refreshed → save/export.
 

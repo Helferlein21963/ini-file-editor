@@ -249,7 +249,15 @@ class IniParser:
     @staticmethod
     def parse_file(path: str | Path) -> IniDocument:
         path = Path(path)
-        text = path.read_text(encoding="utf-8")
+        raw = path.read_bytes()
+        for encoding in ("utf-8-sig", "utf-8", "cp1252", "latin-1"):
+            try:
+                text = raw.decode(encoding)
+                break
+            except UnicodeDecodeError:
+                continue
+        else:
+            text = raw.decode("latin-1")  # latin-1 never fails
         doc = IniParser.parse_string(text)
         doc.source_path = path
         return doc

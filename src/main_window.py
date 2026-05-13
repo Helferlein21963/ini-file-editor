@@ -113,7 +113,7 @@ TRANSLATIONS = {
         "confirm_discard_text": "Es gibt ungespeicherte Änderungen. Wirklich fortfahren?",
         "confirm_discard_all_text": "Mehrere Tabs haben ungespeicherte Änderungen. Trotzdem beenden?",
         "about_title": "Über {app}",
-        "about_text": "<h3>{app}</h3><p>Ein kommentarerhaltender INI-Datei-Editor mit Export nach JSON, XML und YAML.</p><p>Entwickelt mit Python 3 und PyQt6.</p><p>Entwickelt von Thomas Reichenbach (Helferlein21963)</p>",
+        "about_text": "<h3>{app}</h3><p>Ein kommentarerhaltender INI-Datei-Editor mit Export nach JSON, XML und YAML.</p><p>Entwickelt mit Python 3 und PyQt6.",
         "prompt_new_section": "Neuer Abschnitt",
         "prompt_new_entry": "Neuer Eintrag",
         "prompt_key_label": "Schlüssel:",
@@ -221,7 +221,7 @@ TRANSLATIONS = {
         "confirm_discard_text": "There are unsaved changes. Continue anyway?",
         "confirm_discard_all_text": "Multiple tabs have unsaved changes. Quit anyway?",
         "about_title": "About {app}",
-        "about_text": "<h3>{app}</h3><p>A comment-preserving INI editor with export to JSON, XML, and YAML.</p><p>Built with Python 3 and PyQt6.</p><p>Developed by Thomas Reichenbach (Helferlein21963)</p>",
+        "about_text": "<h3>{app}</h3><p>A comment-preserving INI editor with export to JSON, XML, and YAML.</p>",
         "prompt_new_section": "New section",
         "prompt_new_entry": "New entry",
         "prompt_key_label": "Key:",
@@ -1003,7 +1003,7 @@ class DocumentTab(QSplitter):
             sec_data = sec_item.data(0, Qt.ItemDataRole.UserRole)
             if hasattr(sec_data, "name") and sec_data.name == current_section_name:
                 self._syncing = True
-                self._tree.scrollToItem(sec_item, QAbstractItemView.ScrollHint.EnsureVisible)
+                self._tree.scrollToItem(sec_item, QAbstractItemView.ScrollHint.PositionAtTop)
                 self._syncing = False
                 break
 
@@ -1092,6 +1092,9 @@ class DiffTab(QWidget):
         self._tab_b = tab_b
         self._language = language
         self._only_diffs = False
+        self._sort_mode = SortMode.NONE
+        self._find_matches: list[QTreeWidgetItem] = []
+        self._find_idx = -1
         self._build_widgets()
         # Live updates: refresh whenever either source document changes
         self._tab_a.content_changed.connect(self.refresh)
@@ -1121,6 +1124,14 @@ class DiffTab(QWidget):
         self._only_diffs_check.setChecked(False)
         self._only_diffs_check.stateChanged.connect(self._on_toggle_filter)
         opts.addWidget(self._only_diffs_check)
+        opts.addSpacing(16)
+        self._sort_label = QLabel()
+        self._sort_label.setStyleSheet("color: #a6adc8;")
+        opts.addWidget(self._sort_label)
+        self._sort_combo = QComboBox()
+        self._sort_combo.setFixedWidth(220)
+        self._sort_combo.currentIndexChanged.connect(self._on_sort_changed)
+        opts.addWidget(self._sort_combo)
         opts.addStretch()
         self._summary_label = QLabel()
         self._summary_label.setStyleSheet("color: #a6adc8; font-size: 12px;")
@@ -1139,18 +1150,78 @@ class DiffTab(QWidget):
         hdr.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
         layout.addWidget(self._tree)
 
+        # ── Inline find bar (hidden by default) ───────────────────────────
+        self._find_bar_widget = QWidget()
+        self._find_bar_widget.setVisible(False)
+        find_layout = QHBoxLayout(self._find_bar_widget)
+        find_layout.setContentsMargins(4, 2, 4, 2)
+        find_layout.setSpacing(4)
+
+        self._find_label = QLabel()
+        self._find_edit = QLineEdit()
+        self._find_edit.setMinimumWidth(180)
+        self._find_edit.returnPressed.connect(lambda: self._do_find(forward=True))
+        self._find_edit.textChanged.connect(self._reset_find)
+
+        _btn_font = QFont()
+        _btn_font.setPointSize(15)
+        self._find_prev_btn = QPushButton("◀")
+        self._find_prev_btn.setFont(_btn_font)
+        self._find_prev_btn.setFixedSize(38, 28)
+        self._find_prev_btn.clicked.connect(lambda: self._do_find(forward=False))
+        self._find_next_btn = QPushButton("▶")
+        self._find_next_btn.setFont(_btn_font)
+        self._find_next_btn.setFixedSize(38, 28)
+        self._find_next_btn.clicked.connect(lambda: self._do_find(forward=True))
+        self._find_case_check = QCheckBox()
+        self._find_case_check.stateChanged.connect(self._reset_find)
+        self._find_status = QLabel()
+        self._find_status.setMinimumWidth(150)
+        self._find_status.setStyleSheet("color: #a6adc8;")
+        self._find_close_btn = QPushButton("✖")
+        self._find_close_btn.setFont(_btn_font)
+        self._find_close_btn.setFixedSize(38, 28)
+        self._find_close_btn.clicked.connect(self._find_bar_widget.hide)
+
+        find_layout.addWidget(self._find_label)
+        find_layout.addWidget(self._find_edit)
+        find_layout.addWidget(self._find_prev_btn)
+        find_layout.addWidget(self._find_next_btn)
+        find_layout.addSpacing(8)
+        find_layout.addWidget(self._find_case_check)
+        find_layout.addSpacing(8)
+        find_layout.addWidget(self._find_status, 1)
+        find_layout.addWidget(self._find_close_btn)
+        layout.addWidget(self._find_bar_widget)
+
         self._refresh_static_labels()
 
     def _refresh_static_labels(self) -> None:
         self._label_a.setText(f"A: {self._doc_name(self._tab_a)}")
         self._label_b.setText(f"B: {self._doc_name(self._tab_b)}")
         self._only_diffs_check.setText(translate(self._language, "diff_only_diffs"))
+        self._sort_label.setText(translate(self._language, "sort_group"))
+        sort_modes = [SortMode.NONE, SortMode.SECTIONS_ALPHA, SortMode.KEYS_ALPHA, SortMode.SECTIONS_AND_KEYS_ALPHA]
+        self._sort_combo.blockSignals(True)
+        self._sort_combo.clear()
+        self._sort_combo.addItems([
+            translate(self._language, "sort_none"),
+            translate(self._language, "sort_sections"),
+            translate(self._language, "sort_keys"),
+            translate(self._language, "sort_both"),
+        ])
+        self._sort_combo.setCurrentIndex(sort_modes.index(self._sort_mode))
+        self._sort_combo.blockSignals(False)
         self._tree.setHeaderLabels([
             translate(self._language, "diff_col_key"),
             self._doc_name(self._tab_a),
             self._doc_name(self._tab_b),
             "",
         ])
+        self._find_label.setText(translate(self._language, "find_label"))
+        self._find_case_check.setText(translate(self._language, "find_case_sensitive"))
+        self._find_prev_btn.setToolTip(translate(self._language, "find_prev"))
+        self._find_next_btn.setToolTip(translate(self._language, "find_next"))
 
     def _doc_name(self, tab: "DocumentTab") -> str:
         try:
@@ -1167,6 +1238,11 @@ class DiffTab(QWidget):
         self._refresh_static_labels()
         self.refresh()
 
+    def show_find(self) -> None:
+        self._find_bar_widget.setVisible(True)
+        self._find_edit.setFocus()
+        self._find_edit.selectAll()
+
     def refresh(self) -> None:
         try:
             doc_a = self._tab_a.doc
@@ -1177,15 +1253,15 @@ class DiffTab(QWidget):
             self._tree.clear()
             return
 
-        # Apply tab_a's sort mode to both so the view matches the source tabs
-        sort_mode = self._tab_a.sort_mode
-        if sort_mode != SortMode.NONE:
-            doc_a = doc_a.sorted_copy(sort_mode)
-            doc_b = doc_b.sorted_copy(sort_mode)
+        if self._sort_mode != SortMode.NONE:
+            doc_a = doc_a.sorted_copy(self._sort_mode)
+            doc_b = doc_b.sorted_copy(self._sort_mode)
 
         diff = IniDiff.compare(doc_a, doc_b)
         self._refresh_static_labels()
         self._tree.clear()
+        self._find_matches = []
+        self._find_idx = -1
 
         for sec_diff in diff.sections:
             if self._only_diffs and sec_diff.status == DiffStatus.UNCHANGED:
@@ -1226,6 +1302,62 @@ class DiffTab(QWidget):
     def _on_toggle_filter(self) -> None:
         self._only_diffs = self._only_diffs_check.isChecked()
         self.refresh()
+
+    def _on_sort_changed(self, idx: int) -> None:
+        modes = [SortMode.NONE, SortMode.SECTIONS_ALPHA, SortMode.KEYS_ALPHA, SortMode.SECTIONS_AND_KEYS_ALPHA]
+        self._sort_mode = modes[idx]
+        self.refresh()
+
+    def _reset_find(self) -> None:
+        self._find_matches = []
+        self._find_idx = -1
+        self._find_status.setText("")
+
+    def _collect_all_items(self) -> list[QTreeWidgetItem]:
+        items: list[QTreeWidgetItem] = []
+        for i in range(self._tree.topLevelItemCount()):
+            sec = self._tree.topLevelItem(i)
+            items.append(sec)
+            for j in range(sec.childCount()):
+                items.append(sec.child(j))
+        return items
+
+    def _do_find(self, forward: bool) -> None:
+        query = self._find_edit.text()
+        if not query:
+            self._find_status.setText("")
+            return
+        case = self._find_case_check.isChecked()
+        q = query if case else query.lower()
+
+        if not self._find_matches:
+            self._find_matches = []
+            for item in self._collect_all_items():
+                texts = [item.text(c) for c in range(self._tree.columnCount())]
+                haystack = " ".join(texts) if case else " ".join(t.lower() for t in texts)
+                if q in haystack:
+                    self._find_matches.append(item)
+            self._find_idx = -1
+
+        if not self._find_matches:
+            self._find_status.setText(translate(self._language, "find_not_found"))
+            return
+
+        self._find_idx = (self._find_idx + (1 if forward else -1)) % len(self._find_matches)
+        item = self._find_matches[self._find_idx]
+        self._tree.setCurrentItem(item)
+        self._tree.scrollToItem(item, QAbstractItemView.ScrollHint.PositionAtTop)
+        total = len(self._find_matches)
+        self._find_status.setText(
+            f"{translate(self._language, 'find_count', count=total)}"
+            f" ({self._find_idx + 1}/{total})"
+        )
+
+    def keyPressEvent(self, event) -> None:  # type: ignore[override]
+        if event.key() == Qt.Key.Key_Escape and self._find_bar_widget.isVisible():
+            self._find_bar_widget.hide()
+        else:
+            super().keyPressEvent(event)
 
     @staticmethod
     def _status_symbol(status: DiffStatus) -> str:
@@ -2017,10 +2149,18 @@ class MainWindow(QMainWindow):
 
     # ── Find & Replace ────────────────────────────────────────────────────
     def _show_find_dialog(self) -> None:
-        self._find_bar.show_find()
+        w = self._file_tabs.currentWidget()
+        if isinstance(w, DiffTab):
+            w.show_find()
+        else:
+            self._find_bar.show_find()
 
     def _show_find_replace_dialog(self) -> None:
-        self._find_bar.show_replace()
+        w = self._file_tabs.currentWidget()
+        if isinstance(w, DiffTab):
+            w.show_find()
+        else:
+            self._find_bar.show_replace()
 
     def _find_next(self) -> None:
         if not self._find_bar.isVisible():

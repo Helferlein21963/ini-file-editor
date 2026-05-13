@@ -7,6 +7,9 @@ pool:
 variables:
   pythonVersion: '3.14'
   PIP_CACHE_DIR: $(Pipeline.Workspace)/.pip
+  # Manually set major and minor version here or override in Azure DevOps UI
+  MAJOR_VERSION: '1'
+  MINOR_VERSION: '0'
 
 stages:
   - stage: Build
@@ -15,6 +18,9 @@ stages:
       - job: BuildJob
         displayName: 'Build ini-file-editor'
         steps:
+          - checkout: self
+            fetchDepth: 0
+
           - task: UsePythonVersion@0
             inputs:
               versionSpec: '$(pythonVersion)'
@@ -38,6 +44,19 @@ stages:
               pip install pytest
               pytest tests/
             displayName: 'Run tests'
+
+          - pwsh: |
+              $patch = git rev-list --count HEAD
+              Write-Host "Patch version: $patch"
+              Write-Host "##vso[task.setvariable variable=PATCH_VERSION]$patch"
+              $fileVersion = "$(MAJOR_VERSION).$(MINOR_VERSION).$patch"
+              Write-Host "File version: $fileVersion"
+              Write-Host "##vso[task.setvariable variable=FILE_VERSION]$fileVersion"
+            displayName: 'Calculate patch version from commit count'
+
+          - pwsh: |
+              python scripts/generate_version_info.py $(MAJOR_VERSION) $(MINOR_VERSION) $(PATCH_VERSION)
+            displayName: 'Generate version_info.txt ($(FILE_VERSION))'
 
           - script: |
               pip install pyinstaller

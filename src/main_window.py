@@ -35,6 +35,14 @@ try:
 except ModuleNotFoundError:
     from ini_diff import DiffStatus, IniDiff  # type: ignore[no-redef]
 
+try:
+    from src._version import __version__ as _APP_VERSION
+except ModuleNotFoundError:
+    try:
+        from _version import __version__ as _APP_VERSION  # type: ignore[no-redef]
+    except ModuleNotFoundError:
+        _APP_VERSION = "dev"
+
 
 class Language(Enum):
     DE = "de"
@@ -113,7 +121,7 @@ TRANSLATIONS = {
         "confirm_discard_text": "Es gibt ungespeicherte Änderungen. Wirklich fortfahren?",
         "confirm_discard_all_text": "Mehrere Tabs haben ungespeicherte Änderungen. Trotzdem beenden?",
         "about_title": "Über {app}",
-        "about_text": "<h3>{app}</h3><p>Ein kommentarerhaltender INI-Datei-Editor mit Export nach JSON, XML und YAML.</p><p>Entwickelt mit Python 3 und PyQt6.",
+        "about_text": "<h3>{app}</h3><p><b>Version {version}</b></p><p>Ein kommentarerhaltender INI-Datei-Editor mit Export nach JSON, XML und YAML.</p><p>Entwickelt mit Python 3 und PyQt6.",
         "prompt_new_section": "Neuer Abschnitt",
         "prompt_new_entry": "Neuer Eintrag",
         "prompt_key_label": "Schlüssel:",
@@ -221,7 +229,7 @@ TRANSLATIONS = {
         "confirm_discard_text": "There are unsaved changes. Continue anyway?",
         "confirm_discard_all_text": "Multiple tabs have unsaved changes. Quit anyway?",
         "about_title": "About {app}",
-        "about_text": "<h3>{app}</h3><p>A comment-preserving INI editor with export to JSON, XML, and YAML.</p>",
+        "about_text": "<h3>{app}</h3><p><b>Version {version}</b></p><p>A comment-preserving INI editor with export to JSON, XML, and YAML.</p>",
         "prompt_new_section": "New section",
         "prompt_new_entry": "New entry",
         "prompt_key_label": "Key:",
@@ -2144,7 +2152,7 @@ class MainWindow(QMainWindow):
     def _show_about(self) -> None:
         QMessageBox.about(
             self, self._t("about_title", app=self.APP_NAME),
-            self._t("about_text", app=self.APP_NAME)
+            self._t("about_text", app=self.APP_NAME, version=_APP_VERSION)
         )
 
     # ── Find & Replace ────────────────────────────────────────────────────

@@ -19,6 +19,7 @@ Ein kommentarerhaltender INI-Datei-Editor mit **PyQt6-GUI**, flexibler Sortierun
 - [Architektur](#architektur)
 - [Tests ausführen](#tests-ausführen)
 - [DevOps / CI-CD Pipeline](#devops--cicd-pipeline)
+  - [Versionierung](#versionierung)
 - [Docker](#docker)
 - [Beitragen](#beitragen)
 - [Lizenz](#lizenz)
@@ -149,13 +150,26 @@ Das Executable wird erstellt in: `dist/ini-file-editor.exe`
 - `--icon="src/icon.ico"` – EXE-Icon festlegen
 - `--name ini-file-editor` – Name des Executables
 
-**Optional – Build mit der `.spec`-Datei:**
+**Optional – Build mit der `.spec`-Datei (empfohlen):**
 
 ```bash
 python -m pyinstaller ini-file-editor.spec
 ```
 
-Hierbei muss `ini-file-editor.spec` die Icon-Datei (`icon='src\\icon.ico'`) und die Daten-Datei `src/logo.png` enthalten.
+Die `.spec`-Datei generiert vor dem Kompilieren automatisch `version_info.txt` mit den Windows-EXE-Metadaten (Dateiversion, Produktname usw.). Die Patch-Version wird dabei aus der Anzahl der Git-Commits ermittelt. Haupt- und Nebenversion lassen sich über Umgebungsvariablen steuern:
+
+```powershell
+# Windows – Hauptversion 2, Nebenversion 1
+$env:MAJOR_VERSION = "2"; $env:MINOR_VERSION = "1"
+python -m pyinstaller ini-file-editor.spec
+```
+
+```bash
+# Linux / macOS
+MAJOR_VERSION=2 MINOR_VERSION=1 python -m pyinstaller ini-file-editor.spec
+```
+
+Ohne gesetzte Umgebungsvariablen werden die Standardwerte `1.0` verwendet.
 
 ---
 
@@ -214,13 +228,17 @@ ini-file-editor/
 ├── src/
 │   ├── ini_parser.py              # Parser, Datenmodell, Export-Engine
 │   └── main_window.py             # PyQt6 GUI (MainWindow, Dialoge, Tree)
+├── scripts/
+│   └── generate_version_info.py  # Erzeugt version_info.txt für PyInstaller
 ├── tests/
 │   └── test_ini_parser.py         # 20 Unit-Tests (Parser, Sortierung, Export)
 ├── example.ini                    # Beispiel-INI (unstrukturiert, mit Kommentaren)
+├── ini-file-editor.spec           # PyInstaller-Spec (erzeugt version_info.txt automatisch)
 ├── requirements.txt               # Laufzeit-Abhängigkeiten
 ├── requirements-dev.txt           # Entwicklungs- & CI-Abhängigkeiten
 ├── pyproject.toml                 # Paket-Metadaten, Black, isort, mypy, pytest
 ├── Dockerfile                     # Multi-Stage Build (Test + Runtime)
+├── azure-pipelines.yml            # Azure DevOps Pipeline (Build + Versionierung)
 ├── .github/
 │   └── workflows/
 │       └── ci.yml                 # GitHub Actions Pipeline
@@ -286,6 +304,52 @@ Testabdeckung der Kern-Engine: **>95 %** (GUI-Code wird im Headless-CI überspru
 ---
 
 ## DevOps / CI-CD Pipeline
+
+### Azure Pipelines (`azure-pipelines.yml`)
+
+Die primäre Build-Pipeline läuft auf Azure DevOps und erstellt bei jedem Commit auf `main` eine neue EXE mit eingebetteten Versions-Metadaten.
+
+```
+Commit auf main
+   │
+   ├─► Tests              pytest
+   │
+   ├─► Patch berechnen    git rev-list --count HEAD  →  PATCH_VERSION
+   │
+   ├─► version_info.txt   generate_version_info.py (MAJOR.MINOR.PATCH)
+   │
+   ├─► EXE bauen          pyinstaller ini-file-editor.spec
+   │
+   └─► Artefakt           ini-file-editor-build (Azure Artifacts)
+```
+
+### Versionierung
+
+Die EXE-Metadaten (sichtbar unter *Eigenschaften → Details*) folgen **Semantic Versioning**:
+
+| Feld in Dateieigenschaften | Wert | Beispiel |
+|---|---|---|
+| Dateiversion | `MAJOR.MINOR.PATCH` | `1.5.56` |
+| Produktversion | `MAJOR.MINOR` | `1.5` |
+| Produktname | statisch | `ini-file-editor` |
+
+**Patch** wird automatisch pro Commit hochgezählt (`git rev-list --count HEAD`).  
+**Hauptversion** und **Nebenversion** werden manuell in `azure-pipelines.yml` gesetzt:
+
+```yaml
+variables:
+  MAJOR_VERSION: '1'
+  MINOR_VERSION: '5'
+```
+
+Alternativ lassen sich diese Werte im Azure DevOps UI unter **Pipelines → Edit → Variables** überschreiben, ohne einen Commit zu benötigen – sinnvoll bei Releases.
+
+Das Skript [`scripts/generate_version_info.py`](scripts/generate_version_info.py) kann auch lokal aufgerufen werden:
+
+```bash
+python scripts/generate_version_info.py 1 5 42
+# → erzeugt version_info.txt mit Version 1.5.42
+```
 
 ### GitHub Actions (`.github/workflows/ci.yml`)
 

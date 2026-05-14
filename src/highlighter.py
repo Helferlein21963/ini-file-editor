@@ -6,7 +6,12 @@ per line with no regex.
 """
 from __future__ import annotations
 
+import re
+
 from PyQt6.QtGui import QColor, QFont, QSyntaxHighlighter, QTextCharFormat
+
+
+_INLINE_COMMENT_RE = re.compile(r"\s{2,}[;#]")
 
 
 class IniHighlighter(QSyntaxHighlighter):
@@ -41,4 +46,10 @@ class IniHighlighter(QSyntaxHighlighter):
         elif "=" in text:
             eq = text.index("=")
             self.setFormat(0, eq, key_fmt)
-            self.setFormat(eq + 1, len(text) - eq - 1, value_fmt)
+            value_start = eq + 1
+            inline_match = _INLINE_COMMENT_RE.search(text, value_start)
+            if inline_match:
+                self.setFormat(value_start, inline_match.start() - value_start, value_fmt)
+                self.setFormat(inline_match.start(), len(text) - inline_match.start(), comment_fmt)
+            else:
+                self.setFormat(value_start, len(text) - value_start, value_fmt)

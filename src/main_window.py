@@ -64,6 +64,100 @@ except ModuleNotFoundError:
     from dialogs import DiffSelectDialog  # type: ignore[no-redef]
 
 
+DARK_STYLESHEET = """
+    QMainWindow, QDialog, QWidget {
+        background-color: #1e1e2e;
+        color: #cdd6f4;
+        font-family: 'Segoe UI', 'Ubuntu', sans-serif;
+        font-size: 13px;
+    }
+    QMenuBar { background-color: #181825; }
+    QMenuBar::item:selected { background-color: #313244; }
+    QMenu { background-color: #181825; border: 1px solid #45475a; }
+    QMenu::item:selected { background-color: #313244; }
+    QToolBar { background-color: #181825; border-bottom: 1px solid #45475a; spacing: 4px; }
+    QToolButton { padding: 4px 10px; border-radius: 4px; }
+    QToolButton:hover { background-color: #313244; }
+    QGroupBox { border: 1px solid #45475a; border-radius: 6px; margin-top: 8px; padding: 6px; }
+    QGroupBox::title { subcontrol-origin: margin; left: 8px; }
+    QLabel { background-color: transparent; color: #cdd6f4; }
+    QComboBox {
+        background-color: #313244; border: 1px solid #45475a;
+        color: #cdd6f4;
+        border-radius: 4px; padding: 4px 8px; min-width: 200px;
+    }
+    QComboBox::drop-down { border: none; }
+    QComboBox QAbstractItemView {
+        background-color: #313244; color: #cdd6f4;
+        selection-background-color: #45475a;
+    }
+    QPushButton {
+        background-color: #89b4fa; color: #1e1e2e;
+        border: none; border-radius: 4px; padding: 5px 14px; font-weight: bold;
+        min-width: 72px;
+    }
+    QPushButton:hover { background-color: #b4c7fa; }
+    QPushButton:pressed { background-color: #6b8fcc; }
+    QPushButton:disabled { background-color: #45475a; color: #6c7086; }
+    QTreeWidget {
+        background-color: #181825; alternate-background-color: #1e1e2e;
+        border: 1px solid #45475a; border-radius: 4px;
+    }
+    QTreeWidget::item:selected { background-color: #313244; }
+    QHeaderView::section {
+        background-color: #313244; border: none;
+        padding: 5px; border-bottom: 1px solid #45475a;
+    }
+    QPlainTextEdit, QTextEdit {
+        background-color: #181825; color: #cdd6f4;
+        border: 1px solid #45475a;
+        border-radius: 4px; padding: 4px;
+        selection-background-color: #45475a;
+    }
+    QTabWidget::pane { border: 1px solid #45475a; border-radius: 4px; }
+    QTabBar::tab {
+        background-color: #313244; border: 1px solid #45475a;
+        padding: 6px 14px; border-bottom: none;
+    }
+    QTabBar::tab:selected { background-color: #45475a; }
+    QTabBar::close-button { subcontrol-position: right; }
+    QTabBar::close-button:hover { background-color: #f38ba8; border-radius: 2px; }
+    QStatusBar { background-color: #181825; border-top: 1px solid #45475a; }
+    QFrame { border: none; }
+    QLineEdit {
+        background-color: #313244; color: #cdd6f4;
+        border: 1px solid #45475a;
+        border-radius: 4px; padding: 4px 8px;
+        selection-background-color: #45475a;
+    }
+    QLineEdit:focus, QPlainTextEdit:focus, QTextEdit:focus, QComboBox:focus {
+        border: 1px solid #89b4fa;
+    }
+    QSplitter::handle { background-color: #45475a; width: 2px; }
+    QMessageBox { background-color: #1e1e2e; }
+    QMessageBox QLabel { color: #cdd6f4; }
+    QInputDialog { background-color: #1e1e2e; }
+    QInputDialog QLabel { color: #cdd6f4; }
+    QDialogButtonBox { button-layout: 0; }
+    QScrollBar:vertical {
+        background: #181825; width: 12px; margin: 0;
+    }
+    QScrollBar::handle:vertical {
+        background: #45475a; border-radius: 4px; min-height: 24px;
+    }
+    QScrollBar::handle:vertical:hover { background: #585b70; }
+    QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
+    QScrollBar:horizontal {
+        background: #181825; height: 12px; margin: 0;
+    }
+    QScrollBar::handle:horizontal {
+        background: #45475a; border-radius: 4px; min-width: 24px;
+    }
+    QScrollBar::handle:horizontal:hover { background: #585b70; }
+    QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width: 0; }
+"""
+
+
 class MainWindow(QMainWindow):
     """Top-level application window.
 
@@ -136,7 +230,7 @@ class MainWindow(QMainWindow):
                 return
         self._file_tabs.removeTab(idx)
         if self._file_tabs.count() == 0:
-            self._new_tab()
+            self._new_tab(IniDocument())
 
     def _close_current_tab(self) -> None:
         idx = self._file_tabs.currentIndex()
@@ -345,7 +439,7 @@ class MainWindow(QMainWindow):
         self._find_bar.replace_all_requested.connect(self._replace_all)
         root_layout.addWidget(self._find_bar)
 
-        self._new_tab()
+        self._new_tab(IniDocument())
 
     def _update_logo_pixmap(self) -> None:
         if self._logo_pixmap is None or self._logo_label is None:
@@ -379,7 +473,7 @@ class MainWindow(QMainWindow):
 
         self._act_new_tab = QAction(self._t("action_new_tab"), self)
         self._act_new_tab.setShortcut(QKeySequence("Ctrl+T"))
-        self._act_new_tab.triggered.connect(lambda: self._new_tab())
+        self._act_new_tab.triggered.connect(lambda: self._new_tab(IniDocument()))
         self._file_menu.addAction(self._act_new_tab)
 
         self._file_menu.addSeparator()
@@ -493,68 +587,25 @@ class MainWindow(QMainWindow):
         )
 
     def _apply_dark_theme(self) -> None:
-        self.setStyleSheet("""
-            QMainWindow, QWidget {
-                background-color: #1e1e2e;
-                color: #cdd6f4;
-                font-family: 'Segoe UI', 'Ubuntu', sans-serif;
-                font-size: 13px;
-            }
-            QMenuBar { background-color: #181825; }
-            QMenuBar::item:selected { background-color: #313244; }
-            QMenu { background-color: #181825; border: 1px solid #45475a; }
-            QMenu::item:selected { background-color: #313244; }
-            QToolBar { background-color: #181825; border-bottom: 1px solid #45475a; spacing: 4px; }
-            QToolButton { padding: 4px 10px; border-radius: 4px; }
-            QToolButton:hover { background-color: #313244; }
-            QGroupBox { border: 1px solid #45475a; border-radius: 6px; margin-top: 8px; padding: 6px; }
-            QGroupBox::title { subcontrol-origin: margin; left: 8px; }
-            QComboBox {
-                background-color: #313244; border: 1px solid #45475a;
-                border-radius: 4px; padding: 4px 8px; min-width: 200px;
-            }
-            QComboBox::drop-down { border: none; }
-            QComboBox QAbstractItemView { background-color: #313244; selection-background-color: #45475a; }
-            QPushButton {
-                background-color: #89b4fa; color: #1e1e2e;
-                border: none; border-radius: 4px; padding: 5px 14px; font-weight: bold;
-            }
-            QPushButton:hover { background-color: #b4c7fa; }
-            QPushButton:pressed { background-color: #6b8fcc; }
-            QTreeWidget {
-                background-color: #181825; alternate-background-color: #1e1e2e;
-                border: 1px solid #45475a; border-radius: 4px;
-            }
-            QTreeWidget::item:selected { background-color: #313244; }
-            QHeaderView::section {
-                background-color: #313244; border: none;
-                padding: 5px; border-bottom: 1px solid #45475a;
-            }
-            QPlainTextEdit, QTextEdit {
-                background-color: #181825; border: 1px solid #45475a;
-                border-radius: 4px; padding: 4px;
-            }
-            QTabWidget::pane { border: 1px solid #45475a; border-radius: 4px; }
-            QTabBar::tab {
-                background-color: #313244; border: 1px solid #45475a;
-                padding: 6px 14px; border-bottom: none;
-            }
-            QTabBar::tab:selected { background-color: #45475a; }
-            QTabBar::close-button { subcontrol-position: right; }
-            QTabBar::close-button:hover { background-color: #f38ba8; border-radius: 2px; }
-            QStatusBar { background-color: #181825; border-top: 1px solid #45475a; }
-            QFrame { border: none; }
-            QDialog { background-color: #1e1e2e; }
-            QLineEdit {
-                background-color: #313244; border: 1px solid #45475a;
-                border-radius: 4px; padding: 4px 8px;
-            }
-            QSplitter::handle { background-color: #45475a; width: 2px; }
-        """)
+        self.setStyleSheet(DARK_STYLESHEET)
+
+    @staticmethod
+    def _is_pristine_tab(tab: Optional[DocumentTab]) -> bool:
+        if tab is None or tab.dirty:
+            return False
+        doc = tab.doc
+        if doc is None:
+            return True
+        return (
+            doc.source_path is None
+            and not doc.sections
+            and not doc.header_comments
+            and not doc.trailing_comments
+        )
 
     def _new_document(self) -> None:
         tab = self._current_tab()
-        if tab is not None and tab.doc is None and not tab.dirty:
+        if self._is_pristine_tab(tab):
             tab.load_document(IniDocument())
             self._set_tab_title(self._file_tabs.currentIndex(), tab)
         else:
@@ -585,7 +636,7 @@ class MainWindow(QMainWindow):
         for i, path in enumerate(paths):
             path = str(path)
             tab = self._current_tab()
-            if i == 0 and tab is not None and tab.doc is None and not tab.dirty:
+            if i == 0 and self._is_pristine_tab(tab):
                 if self._load_file_into_tab(path, tab):
                     self._set_tab_title(self._file_tabs.currentIndex(), tab)
                     loaded += 1
@@ -1000,6 +1051,7 @@ def main() -> None:
     app = QApplication(sys.argv)
     app.setApplicationName("ini-file-editor")
     app.setOrganizationName("OpenSource")
+    app.setStyleSheet(DARK_STYLESHEET)
     win = MainWindow()
     win.show()
     sys.exit(app.exec())

@@ -203,7 +203,7 @@ class IniTreeWidget(QTreeWidget):
     def _add_section(self) -> None:
         if self._doc is None:
             return
-        name, ok = self._simple_input(self._t("prompt_new_section"), self._t("section_name"))
+        name, ok = self._simple_input(self, self._t("prompt_new_section"), self._t("section_name"))
         if ok and name:
             self.about_to_change.emit()
             self._doc.get_or_create_section(name)
@@ -211,9 +211,9 @@ class IniTreeWidget(QTreeWidget):
             self.document_changed.emit()
 
     def _add_entry(self, sec_item: QTreeWidgetItem, sec: IniSection) -> None:
-        key, ok = self._simple_input(self._t("prompt_new_entry"), self._t("entry_key"))
+        key, ok = self._simple_input(self, self._t("prompt_new_entry"), self._t("entry_key"))
         if ok and key:
-            val, ok2 = self._simple_input(self._t("prompt_new_entry"), self._t("entry_value"))
+            val, ok2 = self._simple_input(self, self._t("prompt_new_entry"), self._t("entry_value"))
             if ok2:
                 self.about_to_change.emit()
                 entry = IniEntry(key=key, value=val)
@@ -257,6 +257,6 @@ class IniTreeWidget(QTreeWidget):
         self.document_changed.emit()
 
     @staticmethod
-    def _simple_input(title: str, label: str) -> tuple[str, bool]:
+    def _simple_input(parent: QWidget, title: str, label: str) -> tuple[str, bool]:
         from PyQt6.QtWidgets import QInputDialog
-        return QInputDialog.getText(None, title, label)
+        return QInputDialog.getText(parent, title, label)

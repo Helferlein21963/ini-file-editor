@@ -43,7 +43,7 @@ Ein kommentarerhaltender INI-Datei-Editor mit **PyQt6-GUI**, flexibler Sortierun
 | **Round-Trip** | Parse → Serialize → Re-Parse ergibt identische Datenstruktur |
 | **Meta-INI / Merge** | Mehrere INI-Dateien zu einem Dokument zusammenführen und exportieren |
 
-### GUI (`main_window.py`)
+### GUI-Schicht (`main_window.py` + Submodule)
 
 | Feature | Beschreibung |
 |---|---|
@@ -227,11 +227,20 @@ ini-file-editor/
 ├── main.py                        # Einstiegspunkt
 ├── src/
 │   ├── ini_parser.py              # Parser, Datenmodell, Export-Engine
-│   └── main_window.py             # PyQt6 GUI (MainWindow, Dialoge, Tree)
+│   ├── ini_diff.py                # Vergleichslogik für zwei IniDocument
+│   ├── translations.py            # Language-Enum, UI-Strings (DE/EN), translate()
+│   ├── highlighter.py             # IniHighlighter (Syntax-Highlighting für die Vorschau)
+│   ├── dialogs.py                 # EntryEditDialog, SectionEditDialog, DiffSelectDialog
+│   ├── ini_tree_widget.py         # IniTreeWidget (Struktur-Tree für Abschnitte/Einträge)
+│   ├── find_bar.py                # FindBar (eingebettete Find/Replace-Leiste)
+│   ├── document_tab.py            # DocumentTab (ein Editor-Pane pro Datei)
+│   ├── diff_tab.py                # DiffTab (Side-by-Side-Vergleich zweier Dokumente)
+│   └── main_window.py             # MainWindow + main() (Menüs, Toolbar, Tab-Verwaltung)
 ├── scripts/
 │   └── generate_version_info.py  # Erzeugt version_info.txt für PyInstaller
 ├── tests/
-│   └── test_ini_parser.py         # 20 Unit-Tests (Parser, Sortierung, Export)
+│   ├── test_ini_parser.py         # Unit-Tests für Parser, Sortierung, Export
+│   └── test_ini_diff.py           # Unit-Tests für die Diff-Logik
 ├── example.ini                    # Beispiel-INI (unstrukturiert, mit Kommentaren)
 ├── ini-file-editor.spec           # PyInstaller-Spec (erzeugt version_info.txt automatisch)
 ├── requirements.txt               # Laufzeit-Abhängigkeiten
@@ -245,6 +254,8 @@ ini-file-editor/
 ├── .gitlab-ci.yml                 # GitLab CI Alternative
 └── README.md
 ```
+
+Die GUI ist auf mehrere kleine Module aufgeteilt, damit jede Datei eine klar abgegrenzte Verantwortung hat. `main_window.py` enthält nur noch das Haupt-`MainWindow` (Menü, Toolbar, Tab-Verwaltung); alle Widgets, Dialoge und Hilfsklassen liegen in eigenen Modulen.
 
 ---
 
@@ -351,31 +362,6 @@ python scripts/generate_version_info.py 1 5 42
 # → erzeugt version_info.txt mit Version 1.5.42
 ```
 
-### GitHub Actions (`.github/workflows/ci.yml`)
-
-Die Pipeline läuft automatisch bei jedem Push und Pull Request:
-
-```
-Push / PR
-   │
-   ├─► lint          black · isort · flake8 · mypy
-   │
-   ├─► test          Python 3.11 + 3.12  ×  Ubuntu · Windows · macOS
-   │                 (Headless via xvfb unter Linux)
-   │                 Coverage-Upload zu Codecov
-   │
-   ├─► build         python -m build  →  sdist + wheel
-   │
-   ├─► build-exe     PyInstaller  →  Standalone-Binary pro OS
-   │
-   └─► publish       (nur bei GitHub Release Tag)
-                     PyPI via OIDC Trusted Publishing
-```
-
-### GitLab CI (`.gitlab-ci.yml`)
-
-Identischer Ablauf, angepasst für GitLab-Infrastruktur mit Cobertura Coverage-Report.
-
 ### Lokaler Build mit Docker
 
 ```bash
@@ -387,24 +373,6 @@ docker build -t ini-file-editor .
 docker run --rm -v $(pwd)/example.ini:/data/file.ini ini-file-editor /data/file.ini json
 docker run --rm -v $(pwd)/example.ini:/data/file.ini ini-file-editor /data/file.ini yaml
 ```
-
-### Umgebungsvariablen für CI
-
-| Variable | Beschreibung | Wo setzen |
-|---|---|---|
-| `PYPI_TOKEN` | API-Token für PyPI-Upload | GitHub/GitLab Secret |
-| `CODECOV_TOKEN` | Codecov Upload-Token | GitHub Secret (optional) |
-
----
-
-## Beitragen
-
-1. Fork erstellen
-2. Feature-Branch: `git checkout -b feature/mein-feature`
-3. Änderungen committen: `git commit -m "feat: mein neues Feature"`
-4. Formatierung prüfen: `black src/ tests/ && isort src/ tests/`
-5. Tests ausführen: `pytest`
-6. Pull Request öffnen
 
 ---
 

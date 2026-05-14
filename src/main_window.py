@@ -4,36 +4,27 @@ main_window.py – PyQt6 main window for the INI Editor application.
 from __future__ import annotations
 
 import sys
-from enum import Enum
 from pathlib import Path
 from typing import Optional
 
-from PyQt6.QtCore import Qt, QUrl, pyqtSignal
+from PyQt6.QtCore import Qt, QUrl
 from PyQt6.QtGui import (
-    QAction, QBrush, QColor, QDragEnterEvent, QDropEvent, QFont, QIcon, QKeySequence,
-    QPalette, QPixmap, QTextCharFormat, QSyntaxHighlighter,
+    QAction, QDragEnterEvent, QDropEvent, QIcon, QKeySequence, QPixmap,
 )
 from PyQt6.QtWidgets import (
-    QAbstractItemView, QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox,
-    QFileDialog, QFormLayout, QFrame, QGroupBox, QHBoxLayout, QHeaderView,
-    QLabel, QSizePolicy, QLineEdit, QMainWindow, QMenu, QMenuBar, QMessageBox,
-    QPlainTextEdit, QPushButton, QSplitter, QStatusBar, QTabWidget, QTextEdit,
-    QToolBar, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget,
+    QApplication, QComboBox, QDialog, QFileDialog, QGroupBox, QHBoxLayout,
+    QLabel, QSizePolicy, QMainWindow, QMessageBox, QPlainTextEdit,
+    QPushButton, QTabWidget, QToolBar, QVBoxLayout, QWidget,
 )
 
 try:
     from src.ini_parser import (
-        ExportFormat, IniDocument, IniEntry, IniParser, IniSection, SortMode,
+        ExportFormat, IniDocument, IniParser, SortMode,
     )
 except ModuleNotFoundError:
     from ini_parser import (
-        ExportFormat, IniDocument, IniEntry, IniParser, IniSection, SortMode,
+        ExportFormat, IniDocument, IniParser, SortMode,
     )
-
-try:
-    from src.ini_diff import DiffStatus, IniDiff
-except ModuleNotFoundError:
-    from ini_diff import DiffStatus, IniDiff  # type: ignore[no-redef]
 
 try:
     from src._version import __version__ as _APP_VERSION
@@ -43,1397 +34,32 @@ except ModuleNotFoundError:
     except ModuleNotFoundError:
         _APP_VERSION = "dev"
 
+try:
+    from src.translations import Language, translate
+except ModuleNotFoundError:
+    from translations import Language, translate  # type: ignore[no-redef]
+
+try:
+    from src.find_bar import FindBar
+except ModuleNotFoundError:
+    from find_bar import FindBar  # type: ignore[no-redef]
+
+try:
+    from src.document_tab import DocumentTab
+except ModuleNotFoundError:
+    from document_tab import DocumentTab  # type: ignore[no-redef]
+
+try:
+    from src.diff_tab import DiffTab
+except ModuleNotFoundError:
+    from diff_tab import DiffTab  # type: ignore[no-redef]
+
+try:
+    from src.dialogs import DiffSelectDialog
+except ModuleNotFoundError:
+    from dialogs import DiffSelectDialog  # type: ignore[no-redef]
 
-class Language(Enum):
-    DE = "de"
-    EN = "en"
 
-TRANSLATIONS = {
-    Language.DE: {
-        "app_name": "ini-file-editor",
-        "status_ready": "Bereit – Öffnen Sie eine INI-Datei oder erstellen Sie ein neues Dokument.",
-        "status_new_document": "Neues Dokument erstellt.",
-        "status_loaded": "Geladen: {path}",
-        "status_merged": "{count} INI-Datei(en) zusammengeführt.",
-        "status_saved": "Gespeichert: {path}",
-        "status_exported": "Exportiert nach: {path}",
-        "status_opened_multiple": "{count} Dateien geöffnet.",
-        "sort_group": "🔀 Sortierung",
-        "sort_none": "Keine Sortierung",
-        "sort_sections": "Abschnitte alphabetisch",
-        "sort_keys": "Schlüssel alphabetisch",
-        "sort_both": "Abschnitte & Schlüssel alphabetisch",
-        "export_group": "📋Export-Format",
-        "export_button": "⤵ Exportieren",
-        "language_label": "🌍 Sprache",
-        "preview_tab": "👁 Vorschau",
-        "header_tab": "📝 Header-Kommentare",
-        "header_placeholder": "Globale Kopf-Kommentare der INI-Datei …",
-        "entry_edit_title": "Eintrag bearbeiten",
-        "entry_key": "Schlüssel:",
-        "entry_value": "Wert:",
-        "entry_inline": "Inline-Kommentar:",
-        "entry_preceding": "Vorherige Kommentare:",
-        "section_edit_title": "Abschnitt bearbeiten",
-        "section_name": "Abschnittsname:",
-        "section_pre_comments": "Kommentare (vor Header):",
-        "section_post_comments": "Kommentare (nach Einträgen):",
-        "action_undo": "↩ &Rückgängig",
-        "action_redo": "↪ &Wiederholen",
-        "context_add_section": "➕ Abschnitt hinzufügen",
-        "context_edit_section": "✏️ Abschnitt bearbeiten",
-        "context_add_entry": "➕ Schlüssel hinzufügen",
-        "context_delete_section": "🗑️ Abschnitt löschen",
-        "context_edit_entry": "✏️ Eintrag bearbeiten",
-        "context_delete_entry": "🗑️ Eintrag löschen",
-        "menu_file": "&Datei",
-        "menu_edit": "&Bearbeiten",
-        "menu_view": "&Ansicht",
-        "menu_help": "&Hilfe",
-        "action_new": "&Neu",
-        "action_new_tab": "&Neuer Tab",
-        "action_open": "📁 &Öffnen…",
-        "action_open_tab": "📁 In neuem Tab &öffnen…",
-        "action_merge": "🔁 Mehrere Dateien zusammenführen…",
-        "action_close_tab": "Tab &schließen",
-        "action_save": "💾 &Speichern",
-        "action_save_as": "💾 Speichern &als…",
-        "action_export": "⤵ &Exportieren…",
-        "action_quit": "❌ &Beenden",
-        "action_add_section": "➕ Abschnitt &hinzufügen",
-        "action_expand": "Alle &aufklappen",
-        "action_collapse": "Alle &einklappen",
-        "action_about": "ℹ️ &Über …",
-        "toolbar_name": "Hauptwerkzeuge",
-        "open_file_title": "INI-Datei öffnen",
-        "merge_files_title": "INI-Dateien zusammenführen",
-        "save_file_title": "INI-Datei speichern",
-        "no_document_title": "Kein Dokument",
-        "no_document_text": "Bitte zuerst eine INI-Datei öffnen oder erstellen.",
-        "error_open": "Datei konnte nicht geöffnet werden:\n{exc}",
-        "error_save": "Datei konnte nicht gespeichert werden:\n{exc}",
-        "error_export": "Export-Fehler",
-        "delete_section_title": "Abschnitt löschen",
-        "delete_section_text": "Abschnitt [{name}] und alle Einträge wirklich löschen?",
-        "delete_entry_title": "Eintrag löschen",
-        "delete_entry_text": "Eintrag [{key}] wirklich löschen?",
-        "confirm_discard_title": "Ungespeicherte Änderungen",
-        "confirm_discard_text": "Es gibt ungespeicherte Änderungen. Wirklich fortfahren?",
-        "confirm_discard_all_text": "Mehrere Tabs haben ungespeicherte Änderungen. Trotzdem beenden?",
-        "about_title": "Über {app}",
-        "about_text": "<h3>{app}</h3><p><b>Version {version}</b></p><p>Ein kommentarerhaltender INI-Datei-Editor mit Export nach JSON, XML und YAML.</p><p>Entwickelt mit Python 3 und PyQt6.",
-        "prompt_new_section": "Neuer Abschnitt",
-        "prompt_new_entry": "Neuer Eintrag",
-        "prompt_key_label": "Schlüssel:",
-        "prompt_value_label": "Wert:",
-        "tree_label": "📋 Struktur-Übersicht",
-        "tree_header_section": "Schlüssel / Abschnitt",
-        "tree_header_value": "Wert",
-        "tree_header_comment": "Kommentar",
-        "merge_error": "Fehler beim Import",
-        "action_find": "🔍 &Suchen",
-        "action_find_replace": "🔄 Suchen & &Ersetzen",
-        "find_title": "Suchen",
-        "find_label": "Suchtext:",
-        "find_case_sensitive": "Groß-/Kleinschreibung beachten",
-        "find_whole_words": "Ganze Wörter",
-        "find_next": "Nächstes",
-        "find_prev": "Vorheriges",
-        "find_not_found": "Suchtext nicht gefunden",
-        "find_count": "{count} Treffer gefunden",
-        "find_replace_title": "Suchen & Ersetzen",
-        "find_replace_label": "Ersetzen durch:",
-        "find_replace_one": "Ersetzen",
-        "find_replace_all": "Alle ersetzen",
-        "find_replace_count": "{count} Einträge ersetzt",
-        "tab_untitled": "Unbenannt",
-        "action_compare": "🔀 Dateien &vergleichen…",
-        "diff_select_title": "Dateien zum Vergleichen auswählen",
-        "diff_select_a": "Datei A (links):",
-        "diff_select_b": "Datei B (rechts):",
-        "diff_no_docs": "Mindestens zwei geöffnete Dokumente werden benötigt.",
-        "diff_same_doc": "Bitte zwei verschiedene Dokumente auswählen.",
-        "diff_col_key": "Abschnitt / Schlüssel",
-        "diff_only_diffs": "Nur Unterschiede zeigen",
-        "diff_summary": "{modified} geändert · {added} hinzugefügt · {removed} entfernt · {unchanged} identisch",
-    },
-    Language.EN: {
-        "app_name": "ini-file-editor",
-        "status_ready": "Ready — open an INI file or create a new document.",
-        "status_new_document": "New document created.",
-        "status_loaded": "Loaded: {path}",
-        "status_merged": "{count} INI file(s) merged.",
-        "status_saved": "Saved: {path}",
-        "status_exported": "Exported to: {path}",
-        "status_opened_multiple": "{count} files opened.",
-        "sort_group": "🔀 Sorting",
-        "sort_none": "No sorting",
-        "sort_sections": "Sections alphabetically",
-        "sort_keys": "Keys alphabetically",
-        "sort_both": "Sections & keys alphabetically",
-        "export_group": "📋 Export format",
-        "export_button": "⤵ Export",
-        "language_label": "🌍 Language",
-        "preview_tab": "👁 Preview",
-        "header_tab": "📝 Header comments",
-        "header_placeholder": "Global header comments for the INI file…",
-        "entry_edit_title": "Edit entry",
-        "entry_key": "Key:",
-        "entry_value": "Value:",
-        "entry_inline": "Inline comment:",
-        "entry_preceding": "Preceding comments:",
-        "section_edit_title": "Edit section",
-        "section_name": "Section name:",
-        "section_pre_comments": "Comments (before header):",
-        "section_post_comments": "Comments (after entries):",
-        "action_undo": "↩ &Undo",
-        "action_redo": "↪ &Redo",
-        "context_add_section": "➕ Add section",
-        "context_edit_section": "✏️ Edit section",
-        "context_add_entry": "➕ Add key",
-        "context_delete_section": "🗑️ Delete section",
-        "context_edit_entry": "✏️ Edit entry",
-        "context_delete_entry": "🗑️ Delete entry",
-        "menu_file": "&File",
-        "menu_edit": "&Edit",
-        "menu_view": "&View",
-        "menu_help": "&Help",
-        "action_new": "&New",
-        "action_new_tab": "&New tab",
-        "action_open": "📁 &Open…",
-        "action_open_tab": "📁 Open in new &tab…",
-        "action_merge": "🔁 Merge multiple files…",
-        "action_close_tab": "&Close tab",
-        "action_save": "💾 &Save",
-        "action_save_as": "💾 Save &as…",
-        "action_export": "⤵ &Export…",
-        "action_quit": "❌ &Quit",
-        "action_add_section": "➕ Add section",
-        "action_expand": "Expand all",
-        "action_collapse": "Collapse all",
-        "action_about": "ℹ️ &About …",
-        "toolbar_name": "Main tools",
-        "open_file_title": "Open INI file",
-        "merge_files_title": "Merge INI files",
-        "save_file_title": "Save INI file",
-        "no_document_title": "No document",
-        "no_document_text": "Please open or create an INI file first.",
-        "error_open": "Could not open file:\n{exc}",
-        "error_save": "Could not save file:\n{exc}",
-        "error_export": "Export error",
-        "delete_section_title": "Delete section",
-        "delete_section_text": "Delete section [{name}] and all entries?",
-        "delete_entry_title": "Delete entry",
-        "delete_entry_text": "Delete entry [{key}]?",
-        "confirm_discard_title": "Unsaved changes",
-        "confirm_discard_text": "There are unsaved changes. Continue anyway?",
-        "confirm_discard_all_text": "Multiple tabs have unsaved changes. Quit anyway?",
-        "about_title": "About {app}",
-        "about_text": "<h3>{app}</h3><p><b>Version {version}</b></p><p>A comment-preserving INI editor with export to JSON, XML, and YAML.</p>",
-        "prompt_new_section": "New section",
-        "prompt_new_entry": "New entry",
-        "prompt_key_label": "Key:",
-        "prompt_value_label": "Value:",
-        "tree_label": "📋 Structure overview",
-        "tree_header_section": "Key / Section",
-        "tree_header_value": "Value",
-        "tree_header_comment": "Comment",
-        "merge_error": "Import error",
-        "action_find": "🔍 &Find",
-        "action_find_replace": "🔄 Find & &Replace",
-        "find_title": "Find",
-        "find_label": "Search text:",
-        "find_case_sensitive": "Case sensitive",
-        "find_whole_words": "Whole words",
-        "find_next": "Next",
-        "find_prev": "Previous",
-        "find_not_found": "Search text not found",
-        "find_count": "{count} matches found",
-        "find_replace_title": "Find & Replace",
-        "find_replace_label": "Replace with:",
-        "find_replace_one": "Replace",
-        "find_replace_all": "Replace all",
-        "find_replace_count": "{count} entries replaced",
-        "tab_untitled": "Untitled",
-        "action_compare": "🔀 &Compare files…",
-        "diff_select_title": "Select files to compare",
-        "diff_select_a": "File A (left):",
-        "diff_select_b": "File B (right):",
-        "diff_no_docs": "At least two open documents are required.",
-        "diff_same_doc": "Please select two different documents.",
-        "diff_col_key": "Section / Key",
-        "diff_only_diffs": "Show differences only",
-        "diff_summary": "{modified} modified · {added} added · {removed} removed · {unchanged} identical",
-    },
-}
-
-def translate(lang: Language, key: str, **kwargs: object) -> str:
-    text = TRANSLATIONS[lang].get(key, key)
-    return text.format(**kwargs)
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Syntax highlighter for the raw text preview
-# ─────────────────────────────────────────────────────────────────────────────
-class IniHighlighter(QSyntaxHighlighter):
-    def highlightBlock(self, text: str) -> None:  # type: ignore[override]
-        stripped = text.strip()
-
-        comment_fmt = QTextCharFormat()
-        comment_fmt.setForeground(QColor("#6A9955"))
-        comment_fmt.setFontItalic(True)
-
-        section_fmt = QTextCharFormat()
-        section_fmt.setForeground(QColor("#569CD6"))
-        section_fmt.setFontWeight(QFont.Weight.Bold)
-
-        key_fmt = QTextCharFormat()
-        key_fmt.setForeground(QColor("#9CDCFE"))
-
-        value_fmt = QTextCharFormat()
-        value_fmt.setForeground(QColor("#CE9178"))
-
-        if stripped.startswith(";") or stripped.startswith("#"):
-            self.setFormat(0, len(text), comment_fmt)
-        elif stripped.startswith("[") and "]" in stripped:
-            self.setFormat(0, len(text), section_fmt)
-        elif "=" in text:
-            eq = text.index("=")
-            self.setFormat(0, eq, key_fmt)
-            self.setFormat(eq + 1, len(text) - eq - 1, value_fmt)
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Entry editor dialog
-# ─────────────────────────────────────────────────────────────────────────────
-class EntryEditDialog(QDialog):
-    def __init__(self, entry: IniEntry, language: Language, parent: Optional[QWidget] = None) -> None:
-        super().__init__(parent)
-        self._language = language
-        self.setWindowTitle(translate(language, "entry_edit_title"))
-        self.setMinimumWidth(480)
-        self._entry = entry
-
-        layout = QVBoxLayout(self)
-
-        form = QFormLayout()
-        self._key_edit = QLineEdit(entry.key)
-        self._value_edit = QLineEdit(entry.value)
-        self._inline_edit = QLineEdit(entry.inline_comment)
-        self._comments_edit = QPlainTextEdit("\n".join(entry.preceding_comments))
-        self._comments_edit.setMaximumHeight(100)
-
-        form.addRow(translate(language, "entry_key"), self._key_edit)
-        form.addRow(translate(language, "entry_value"), self._value_edit)
-        form.addRow(translate(language, "entry_inline"), self._inline_edit)
-        form.addRow(translate(language, "entry_preceding"), self._comments_edit)
-        layout.addLayout(form)
-
-        buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
-        )
-        buttons.accepted.connect(self.accept)
-        buttons.rejected.connect(self.reject)
-        layout.addWidget(buttons)
-
-    def apply_to_entry(self) -> None:
-        self._entry.key = self._key_edit.text().strip()
-        self._entry.value = self._value_edit.text()
-        self._entry.inline_comment = self._inline_edit.text().strip()
-        raw = self._comments_edit.toPlainText()
-        self._entry.preceding_comments = raw.splitlines() if raw.strip() else []
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Section editor dialog
-# ─────────────────────────────────────────────────────────────────────────────
-class SectionEditDialog(QDialog):
-    def __init__(self, section: IniSection, language: Language, parent: Optional[QWidget] = None) -> None:
-        super().__init__(parent)
-        self._language = language
-        self.setWindowTitle(translate(language, "section_edit_title"))
-        self.setMinimumWidth(480)
-        self._section = section
-
-        layout = QVBoxLayout(self)
-        form = QFormLayout()
-
-        self._name_edit = QLineEdit(section.name)
-        self._pre_edit = QPlainTextEdit("\n".join(section.preceding_comments))
-        self._pre_edit.setMaximumHeight(90)
-        self._trail_edit = QPlainTextEdit("\n".join(section.trailing_comments))
-        self._trail_edit.setMaximumHeight(90)
-
-        form.addRow(translate(language, "section_name"), self._name_edit)
-        form.addRow(translate(language, "section_pre_comments"), self._pre_edit)
-        form.addRow(translate(language, "section_post_comments"), self._trail_edit)
-        layout.addLayout(form)
-
-        buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
-        )
-        buttons.accepted.connect(self.accept)
-        buttons.rejected.connect(self.reject)
-        layout.addWidget(buttons)
-
-    def apply_to_section(self) -> None:
-        self._section.name = self._name_edit.text().strip()
-        raw_pre = self._pre_edit.toPlainText()
-        self._section.preceding_comments = raw_pre.splitlines() if raw_pre.strip() else []
-        raw_trail = self._trail_edit.toPlainText()
-        self._section.trailing_comments = raw_trail.splitlines() if raw_trail.strip() else []
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Central tree widget that displays sections and entries
-# ─────────────────────────────────────────────────────────────────────────────
-class IniTreeWidget(QTreeWidget):
-    document_changed = pyqtSignal()
-    about_to_change = pyqtSignal()
-
-    def __init__(self, language: Language, parent: Optional[QWidget] = None) -> None:
-        super().__init__(parent)
-        self._language = language
-        self.setColumnCount(3)
-        self._refresh_header_labels()
-        self.header().setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)
-        self.header().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-        self.header().setSectionResizeMode(2, QHeaderView.ResizeMode.Interactive)
-        self.setAlternatingRowColors(True)
-        self.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
-        self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-        self.customContextMenuRequested.connect(self._context_menu)
-        self.itemDoubleClicked.connect(self._on_double_click)
-        self._doc: Optional[IniDocument] = None
-        self._sort_mode = SortMode.NONE
-
-    def set_language(self, language: Language) -> None:
-        self._language = language
-        self._refresh_header_labels()
-
-    def _t(self, key: str, **kwargs: object) -> str:
-        return translate(self._language, key, **kwargs)
-
-    def _refresh_header_labels(self) -> None:
-        self.setHeaderLabels([
-            self._t("tree_header_section"),
-            self._t("tree_header_value"),
-            self._t("tree_header_comment"),
-        ])
-
-    def load_document(self, doc: IniDocument) -> None:
-        self._doc = doc
-        self._refresh()
-
-    def set_sort_mode(self, mode: SortMode) -> None:
-        self._sort_mode = mode
-        self._refresh()
-
-    def _refresh(self) -> None:
-        self.clear()
-        if self._doc is None:
-            return
-        sections = list(self._doc.sections)
-        if self._sort_mode in (SortMode.SECTIONS_ALPHA, SortMode.SECTIONS_AND_KEYS_ALPHA):
-            sections = sorted(sections, key=lambda s: s.name.lower())
-        for sec in sections:
-            sec_item = QTreeWidgetItem(self)
-            self._style_section_item(sec_item, sec)
-            entries = list(sec.entries)
-            if self._sort_mode in (SortMode.KEYS_ALPHA, SortMode.SECTIONS_AND_KEYS_ALPHA):
-                entries = sorted(entries, key=lambda e: e.key.lower())
-            for entry in entries:
-                entry_item = QTreeWidgetItem(sec_item)
-                self._style_entry_item(entry_item, entry)
-            sec_item.setExpanded(True)
-
-    def _style_section_item(self, item: QTreeWidgetItem, sec: IniSection) -> None:
-        item.setText(0, f"[{sec.name}]")
-        item.setText(1, "")
-        comment_text = " | ".join(c for c in sec.preceding_comments if c.strip())
-        item.setText(2, comment_text)
-        font = QFont()
-        font.setBold(True)
-        item.setFont(0, font)
-        item.setForeground(0, QColor("#569CD6"))
-        item.setData(0, Qt.ItemDataRole.UserRole, sec)
-
-    def _style_entry_item(self, item: QTreeWidgetItem, entry: IniEntry) -> None:
-        item.setText(0, entry.key)
-        item.setText(1, entry.value)
-        item.setText(2, entry.inline_comment)
-        item.setForeground(1, self._value_color(entry.value))
-        item.setData(0, Qt.ItemDataRole.UserRole, entry)
-
-    def _value_color(self, value: str) -> QColor:
-        raw = value.strip()
-        normalized = raw.lower()
-        if normalized in {"false", "0"}:
-            return QColor("#FF4B4B")
-        if normalized in {"true", "1"}:
-            return QColor("#6CCC70")
-        try:
-            int(raw)
-        except ValueError:
-            pass
-        else:
-            return QColor("#4DD0E1")
-        try:
-            float(raw)
-        except ValueError:
-            pass
-        else:
-            return QColor("#B468C7")
-        return QColor("#D4840A")
-
-    def _on_double_click(self, item: QTreeWidgetItem, _col: int) -> None:
-        obj = item.data(0, Qt.ItemDataRole.UserRole)
-        if isinstance(obj, IniSection):
-            self._edit_section(item, obj)
-        elif isinstance(obj, IniEntry):
-            self._edit_entry(item, obj)
-
-    def _context_menu(self, pos) -> None:
-        item = self.itemAt(pos)
-        menu = QMenu(self)
-        if item is None:
-            act_add_sec = menu.addAction(self._t("context_add_section"))
-            act_add_sec.triggered.connect(self._add_section)
-        else:
-            obj = item.data(0, Qt.ItemDataRole.UserRole)
-            if isinstance(obj, IniSection):
-                act_edit = menu.addAction(self._t("context_edit_section"))
-                act_edit.triggered.connect(lambda: self._edit_section(item, obj))
-                act_add_key = menu.addAction(self._t("context_add_entry"))
-                act_add_key.triggered.connect(lambda: self._add_entry(item, obj))
-                menu.addSeparator()
-                act_del = menu.addAction(self._t("context_delete_section"))
-                act_del.triggered.connect(lambda: self._delete_section(item, obj))
-            elif isinstance(obj, IniEntry):
-                act_edit = menu.addAction(self._t("context_edit_entry"))
-                act_edit.triggered.connect(lambda: self._edit_entry(item, obj))
-                menu.addSeparator()
-                act_del = menu.addAction(self._t("context_delete_entry"))
-                act_del.triggered.connect(lambda: self._delete_entry(item, obj))
-        menu.exec(self.viewport().mapToGlobal(pos))
-
-    def _edit_section(self, item: QTreeWidgetItem, sec: IniSection) -> None:
-        dlg = SectionEditDialog(sec, self._language, self)
-        if dlg.exec() == QDialog.DialogCode.Accepted:
-            self.about_to_change.emit()
-            dlg.apply_to_section()
-            self._style_section_item(item, sec)
-            self.document_changed.emit()
-
-    def _edit_entry(self, item: QTreeWidgetItem, entry: IniEntry) -> None:
-        dlg = EntryEditDialog(entry, self._language, self)
-        if dlg.exec() == QDialog.DialogCode.Accepted:
-            self.about_to_change.emit()
-            dlg.apply_to_entry()
-            self._style_entry_item(item, entry)
-            self.document_changed.emit()
-
-    def _add_section(self) -> None:
-        if self._doc is None:
-            return
-        name, ok = self._simple_input(self._t("prompt_new_section"), self._t("section_name"))
-        if ok and name:
-            self.about_to_change.emit()
-            self._doc.get_or_create_section(name)
-            self._refresh()
-            self.document_changed.emit()
-
-    def _add_entry(self, sec_item: QTreeWidgetItem, sec: IniSection) -> None:
-        key, ok = self._simple_input(self._t("prompt_new_entry"), self._t("entry_key"))
-        if ok and key:
-            val, ok2 = self._simple_input(self._t("prompt_new_entry"), self._t("entry_value"))
-            if ok2:
-                self.about_to_change.emit()
-                entry = IniEntry(key=key, value=val)
-                sec.entries.append(entry)
-                child = QTreeWidgetItem(sec_item)
-                self._style_entry_item(child, entry)
-                self.document_changed.emit()
-
-    def _delete_section(self, item: QTreeWidgetItem, sec: IniSection) -> None:
-        if self._doc is None:
-            return
-        reply = QMessageBox.question(
-            self,
-            self._t("delete_section_title"),
-            self._t("delete_section_text", name=sec.name),
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-        )
-        if reply == QMessageBox.StandardButton.Yes:
-            self.about_to_change.emit()
-            self._doc.remove_section(sec.name)
-            root = self.invisibleRootItem()
-            root.removeChild(item)
-            self.document_changed.emit()
-
-    def _delete_entry(self, item: QTreeWidgetItem, entry: IniEntry) -> None:
-        parent = item.parent()
-        if parent is None:
-            return
-        reply = QMessageBox.question(
-            self,
-            self._t("delete_entry_title"),
-            self._t("delete_entry_text", key=entry.key),
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-        )
-        if reply != QMessageBox.StandardButton.Yes:
-            return
-        self.about_to_change.emit()
-        sec: IniSection = parent.data(0, Qt.ItemDataRole.UserRole)
-        sec.remove_entry(entry.key)
-        parent.removeChild(item)
-        self.document_changed.emit()
-
-    @staticmethod
-    def _simple_input(title: str, label: str) -> tuple[str, bool]:
-        from PyQt6.QtWidgets import QInputDialog
-        return QInputDialog.getText(None, title, label)
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Find / Replace bar  (embedded panel at the bottom of the main window)
-# ─────────────────────────────────────────────────────────────────────────────
-class FindBar(QWidget):
-    find_next_requested = pyqtSignal()
-    find_prev_requested = pyqtSignal()
-    replace_requested = pyqtSignal()
-    replace_all_requested = pyqtSignal()
-
-    def __init__(self, language: Language, parent: Optional[QWidget] = None) -> None:
-        super().__init__(parent)
-        self.setVisible(False)
-
-        outer = QVBoxLayout(self)
-        outer.setContentsMargins(6, 3, 6, 3)
-        outer.setSpacing(2)
-
-        # ── Find row ──────────────────────────────────────────────────────
-        find_row = QHBoxLayout()
-        find_row.setSpacing(4)
-
-        self._search_label = QLabel(translate(language, "find_label"))
-        self._search_edit = QLineEdit()
-        self._search_edit.setMinimumWidth(200)
-        self._search_edit.returnPressed.connect(self.find_next_requested)
-
-        _emoji_font = QFont()
-        _emoji_font.setPointSize(15)
-
-        self._prev_btn = QPushButton("◀")
-        self._prev_btn.setFont(_emoji_font)
-        self._prev_btn.setFixedSize(38, 28)
-        self._prev_btn.clicked.connect(self.find_prev_requested)
-
-        self._next_btn = QPushButton("▶")
-        self._next_btn.setFont(_emoji_font)
-        self._next_btn.setFixedSize(38, 28)
-        self._next_btn.clicked.connect(self.find_next_requested)
-
-        self._case_check = QCheckBox(translate(language, "find_case_sensitive"))
-        self._whole_words_check = QCheckBox(translate(language, "find_whole_words"))
-
-        self._status_label = QLabel("")
-        self._status_label.setMinimumWidth(160)
-
-        self._close_btn = QPushButton("✖")
-        self._close_btn.setFont(_emoji_font)
-        self._close_btn.setFixedSize(38, 28)
-        self._close_btn.clicked.connect(self.hide)
-
-        find_row.addWidget(self._search_label)
-        find_row.addWidget(self._search_edit)
-        find_row.addWidget(self._prev_btn)
-        find_row.addWidget(self._next_btn)
-        find_row.addSpacing(8)
-        find_row.addWidget(self._case_check)
-        find_row.addWidget(self._whole_words_check)
-        find_row.addSpacing(8)
-        find_row.addWidget(self._status_label, 1)
-        find_row.addWidget(self._close_btn)
-        outer.addLayout(find_row)
-
-        # ── Replace row (hidden in find-only mode) ────────────────────────
-        self._replace_widget = QWidget()
-        replace_row = QHBoxLayout(self._replace_widget)
-        replace_row.setContentsMargins(0, 0, 0, 0)
-        replace_row.setSpacing(4)
-
-        self._replace_label = QLabel(translate(language, "find_replace_label"))
-        self._replace_edit = QLineEdit()
-        self._replace_edit.setMinimumWidth(200)
-        self._replace_edit.returnPressed.connect(self.replace_requested)
-
-        self._replace_btn = QPushButton(translate(language, "find_replace_one"))
-        self._replace_btn.clicked.connect(self.replace_requested)
-        self._replace_all_btn = QPushButton(translate(language, "find_replace_all"))
-        self._replace_all_btn.clicked.connect(self.replace_all_requested)
-
-        replace_row.addWidget(self._replace_label)
-        replace_row.addWidget(self._replace_edit)
-        replace_row.addWidget(self._replace_btn)
-        replace_row.addWidget(self._replace_all_btn)
-        replace_row.addStretch()
-        outer.addWidget(self._replace_widget)
-
-        self._replace_widget.setVisible(False)
-
-    # ── Public interface ──────────────────────────────────────────────────
-    def show_find(self) -> None:
-        self._replace_widget.setVisible(False)
-        self.setVisible(True)
-        self._search_edit.setFocus()
-        self._search_edit.selectAll()
-
-    def show_replace(self) -> None:
-        self._replace_widget.setVisible(True)
-        self.setVisible(True)
-        self._search_edit.setFocus()
-        self._search_edit.selectAll()
-
-    def is_replace_mode(self) -> bool:
-        return self._replace_widget.isVisible()
-
-    def get_search_text(self) -> str:
-        return self._search_edit.text()
-
-    def get_replace_text(self) -> str:
-        return self._replace_edit.text()
-
-    def is_case_sensitive(self) -> bool:
-        return self._case_check.isChecked()
-
-    def is_whole_words(self) -> bool:
-        return self._whole_words_check.isChecked()
-
-    def set_status(self, message: str) -> None:
-        self._status_label.setText(message)
-
-    def set_language(self, language: Language) -> None:
-        self._search_label.setText(translate(language, "find_label"))
-        self._prev_btn.setToolTip(translate(language, "find_prev"))
-        self._next_btn.setToolTip(translate(language, "find_next"))
-        self._case_check.setText(translate(language, "find_case_sensitive"))
-        self._whole_words_check.setText(translate(language, "find_whole_words"))
-        self._replace_label.setText(translate(language, "find_replace_label"))
-        self._replace_btn.setText(translate(language, "find_replace_one"))
-        self._replace_all_btn.setText(translate(language, "find_replace_all"))
-
-    def keyPressEvent(self, event) -> None:  # type: ignore[override]
-        if event.key() == Qt.Key.Key_Escape:
-            self.hide()
-        super().keyPressEvent(event)
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Document tab – one self-contained editor pane per open file
-# ─────────────────────────────────────────────────────────────────────────────
-class DocumentTab(QSplitter):
-    """Holds one IniDocument with its own tree, preview, and header editor."""
-
-    content_changed = pyqtSignal()
-
-    def __init__(
-        self,
-        language: Language,
-        sort_mode: SortMode,
-        export_format: ExportFormat,
-        parent: Optional[QWidget] = None,
-    ) -> None:
-        super().__init__(Qt.Orientation.Horizontal, parent)
-        self._language = language
-        self._sort_mode = sort_mode
-        self._export_format = export_format
-        self._doc: Optional[IniDocument] = None
-        self._dirty = False
-        self._syncing = False
-        self._last_synced_section: Optional[str] = None
-        self._last_tree_match: Optional[QTreeWidgetItem] = None
-        self._undo_stack: list[IniDocument] = []
-        self._redo_stack: list[IniDocument] = []
-        self._header_pristine = True
-        self._build_widgets()
-
-    # ── Widget construction ───────────────────────────────────────────────
-    def _build_widgets(self) -> None:
-        left_frame = QFrame()
-        left_layout = QVBoxLayout(left_frame)
-        left_layout.setContentsMargins(0, 0, 0, 0)
-
-        self._tree_label = QLabel("")
-        self._tree_label.setStyleSheet("font-weight: bold; padding: 4px;")
-        left_layout.addWidget(self._tree_label)
-
-        self._tree = IniTreeWidget(self._language)
-        self._tree.document_changed.connect(self._on_document_changed)
-        self._tree.about_to_change.connect(self.push_undo_state)
-        left_layout.addWidget(self._tree)
-        self.addWidget(left_frame)
-
-        self._right_tabs = QTabWidget()
-
-        self._preview_edit = QPlainTextEdit()
-        self._preview_edit.setReadOnly(True)
-        self._preview_edit.setFont(QFont("Courier New", 10))
-        self._highlighter = IniHighlighter(self._preview_edit.document())
-        self._right_tabs.addTab(self._preview_edit, "")
-
-        self._header_edit = QPlainTextEdit()
-        self._header_edit.setFont(QFont("Courier New", 10))
-        self._header_edit.textChanged.connect(self._on_header_changed)
-        self._right_tabs.addTab(self._header_edit, "")
-
-        self.addWidget(self._right_tabs)
-        self.setSizes([420, 780])
-
-        self._preview_edit.verticalScrollBar().valueChanged.connect(self._on_preview_scrolled)
-        self._tree.verticalScrollBar().valueChanged.connect(self._on_tree_scrolled)
-        self._tree.currentItemChanged.connect(self._on_tree_current_changed)
-
-    # ── Properties ────────────────────────────────────────────────────────
-    @property
-    def doc(self) -> Optional[IniDocument]:
-        return self._doc
-
-    @property
-    def dirty(self) -> bool:
-        return self._dirty
-
-    @dirty.setter
-    def dirty(self, value: bool) -> None:
-        self._dirty = value
-
-    @property
-    def tree(self) -> IniTreeWidget:
-        return self._tree
-
-    @property
-    def preview_edit(self) -> QPlainTextEdit:
-        return self._preview_edit
-
-    @property
-    def sort_mode(self) -> SortMode:
-        return self._sort_mode
-
-    @property
-    def export_format(self) -> ExportFormat:
-        return self._export_format
-
-    # ── Public API ────────────────────────────────────────────────────────
-    def set_language(self, language: Language) -> None:
-        self._language = language
-        self._tree.set_language(language)
-
-    def set_sort_mode(self, mode: SortMode) -> None:
-        self._sort_mode = mode
-        if self._doc is not None:
-            self._tree.set_sort_mode(mode)
-            self._refresh_preview()
-
-    def set_export_format(self, fmt: ExportFormat) -> None:
-        self._export_format = fmt
-        if self._doc is not None:
-            self._refresh_preview()
-
-    def set_labels(self, tree_label: str, preview_tab: str, header_tab: str, header_placeholder: str) -> None:
-        self._tree_label.setText(tree_label)
-        self._right_tabs.setTabText(0, preview_tab)
-        self._right_tabs.setTabText(1, header_tab)
-        self._header_edit.setPlaceholderText(header_placeholder)
-
-    def push_undo_state(self) -> None:
-        if self._doc is None:
-            return
-        self._undo_stack.append(self._doc.clone())
-        del self._redo_stack[:]
-        if len(self._undo_stack) > 100:
-            self._undo_stack.pop(0)
-
-    def undo(self) -> None:
-        if not self._undo_stack or self._doc is None:
-            return
-        self._redo_stack.append(self._doc.clone())
-        self._doc = self._undo_stack.pop()
-        self._header_pristine = True
-        self.load_into_ui()
-        self._dirty = True
-        self.content_changed.emit()
-
-    def redo(self) -> None:
-        if not self._redo_stack or self._doc is None:
-            return
-        self._undo_stack.append(self._doc.clone())
-        self._doc = self._redo_stack.pop()
-        self._header_pristine = True
-        self.load_into_ui()
-        self._dirty = True
-        self.content_changed.emit()
-
-    def load_document(self, doc: IniDocument) -> None:
-        self._doc = doc
-        self._dirty = False
-        self._undo_stack.clear()
-        self._redo_stack.clear()
-        self._header_pristine = True
-        self.load_into_ui()
-
-    def load_into_ui(self) -> None:
-        if self._doc is None:
-            return
-        self._header_pristine = True
-        self._tree.load_document(self._doc)
-        self._tree.set_sort_mode(self._sort_mode)
-        self._header_edit.blockSignals(True)
-        self._header_edit.setPlainText("\n".join(self._doc.header_comments))
-        self._header_edit.blockSignals(False)
-        self._refresh_preview()
-
-    def sync_doc_from_preview(self) -> None:
-        text = self._preview_edit.document().toPlainText()
-        try:
-            new_doc = IniParser.parse_string(text)
-            new_doc.source_path = self._doc.source_path if self._doc else None
-            self._doc = new_doc
-            self._tree.load_document(self._doc)
-            self._tree.set_sort_mode(self._sort_mode)
-        except Exception:
-            pass
-        self._dirty = True
-        self.content_changed.emit()
-
-    def sync_tree_to_preview_match(self, cursor) -> None:
-        line_no = cursor.blockNumber()
-        lines = self._preview_edit.document().toPlainText().splitlines()
-
-        current_section_name: Optional[str] = None
-        matched_key: Optional[str] = None
-
-        for i, line in enumerate(lines[: line_no + 1]):
-            stripped = line.strip()
-            if stripped.startswith("[") and "]" in stripped:
-                current_section_name = stripped[1 : stripped.index("]")]
-                if i == line_no:
-                    matched_key = None
-            elif (
-                "=" in stripped
-                and not stripped.startswith(";")
-                and not stripped.startswith("#")
-                and i == line_no
-            ):
-                matched_key = stripped.split("=", 1)[0].strip()
-
-        if current_section_name is None:
-            return
-
-        from PyQt6.QtGui import QBrush
-        palette = QApplication.palette()
-        highlight = palette.color(QPalette.ColorGroup.Active, QPalette.ColorRole.Highlight)
-        col_count = self._tree.columnCount()
-
-        if self._last_tree_match is not None:
-            for c in range(col_count):
-                self._last_tree_match.setBackground(c, QBrush())
-            self._last_tree_match = None
-
-        match_item: Optional[QTreeWidgetItem] = None
-        for idx in range(self._tree.topLevelItemCount()):
-            sec_item = self._tree.topLevelItem(idx)
-            sec_data = sec_item.data(0, Qt.ItemDataRole.UserRole)
-            if not hasattr(sec_data, "name") or sec_data.name != current_section_name:
-                continue
-            if matched_key is None:
-                match_item = sec_item
-            else:
-                for j in range(sec_item.childCount()):
-                    entry_item = sec_item.child(j)
-                    entry_data = entry_item.data(0, Qt.ItemDataRole.UserRole)
-                    if hasattr(entry_data, "key") and entry_data.key == matched_key:
-                        match_item = entry_item
-                        break
-            break
-
-        if match_item is not None:
-            for c in range(col_count):
-                match_item.setBackground(c, QBrush(highlight))
-            self._tree.scrollToItem(match_item)
-            self._last_tree_match = match_item
-
-    # ── Private slots ─────────────────────────────────────────────────────
-    def _refresh_preview(self) -> None:
-        if self._doc is None:
-            return
-        doc = self._doc.sorted_copy(self._sort_mode)
-        try:
-            text = doc.export(self._export_format)
-        except Exception as exc:
-            text = f"[Render error: {exc}]"
-        self._preview_edit.setPlainText(text)
-        self._preview_edit.repaint()
-
-    def _on_document_changed(self) -> None:
-        self._dirty = True
-        self._refresh_preview()
-        self.content_changed.emit()
-
-    def _on_header_changed(self) -> None:
-        if self._doc is None:
-            return
-        if self._header_pristine:
-            self.push_undo_state()
-            self._header_pristine = False
-        raw = self._header_edit.toPlainText()
-        self._doc.header_comments = raw.splitlines() if raw.strip() else []
-        self._dirty = True
-        self._refresh_preview()
-        self.content_changed.emit()
-
-    # ── Scroll sync ───────────────────────────────────────────────────────
-    def _on_preview_scrolled(self) -> None:
-        if self._syncing or self._export_format != ExportFormat.INI or self._doc is None:
-            return
-        line_no = self._preview_edit.firstVisibleBlock().blockNumber()
-        lines = self._preview_edit.document().toPlainText().splitlines()
-        current_section_name: Optional[str] = None
-        for i in range(min(line_no, len(lines) - 1), -1, -1):
-            stripped = lines[i].strip()
-            if stripped.startswith("[") and "]" in stripped:
-                current_section_name = stripped[1 : stripped.index("]")]
-                break
-        if current_section_name is None or current_section_name == self._last_synced_section:
-            return
-        self._last_synced_section = current_section_name
-        for idx in range(self._tree.topLevelItemCount()):
-            sec_item = self._tree.topLevelItem(idx)
-            sec_data = sec_item.data(0, Qt.ItemDataRole.UserRole)
-            if hasattr(sec_data, "name") and sec_data.name == current_section_name:
-                self._syncing = True
-                self._tree.scrollToItem(sec_item, QAbstractItemView.ScrollHint.PositionAtTop)
-                self._syncing = False
-                break
-
-    def _scroll_preview_to_item(self, item: QTreeWidgetItem) -> None:
-        data = item.data(0, Qt.ItemDataRole.UserRole)
-        if data is None:
-            return
-        if hasattr(data, "name"):
-            section_name: str = data.name
-            key: Optional[str] = None
-        elif hasattr(data, "key"):
-            parent = item.parent()
-            if parent is None:
-                return
-            sec_data = parent.data(0, Qt.ItemDataRole.UserRole)
-            if not hasattr(sec_data, "name"):
-                return
-            section_name = sec_data.name
-            key = data.key
-        else:
-            return
-        lines = self._preview_edit.document().toPlainText().splitlines()
-        target_line: Optional[int] = None
-        current_section: Optional[str] = None
-        for i, line in enumerate(lines):
-            stripped = line.strip()
-            if stripped.startswith("[") and "]" in stripped:
-                current_section = stripped[1 : stripped.index("]")]
-                if current_section == section_name and key is None:
-                    target_line = i
-                    break
-            elif (
-                current_section == section_name
-                and key is not None
-                and "=" in stripped
-                and not stripped.startswith(";")
-                and not stripped.startswith("#")
-            ):
-                if stripped.split("=", 1)[0].strip() == key:
-                    target_line = i
-                    break
-        if target_line is None:
-            return
-        self._syncing = True
-        self._last_synced_section = section_name
-        self._preview_edit.verticalScrollBar().setValue(target_line)
-        self._syncing = False
-
-    def _on_tree_scrolled(self) -> None:
-        if self._syncing or self._export_format != ExportFormat.INI or self._doc is None:
-            return
-        item = self._tree.itemAt(0, 0)
-        if item is None:
-            return
-        self._scroll_preview_to_item(item)
-
-    def _on_tree_current_changed(
-        self, item: Optional[QTreeWidgetItem], _: Optional[QTreeWidgetItem]
-    ) -> None:
-        if self._syncing or self._export_format != ExportFormat.INI or item is None or self._doc is None:
-            return
-        self._scroll_preview_to_item(item)
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Diff view – side-by-side comparison of two open documents
-# ─────────────────────────────────────────────────────────────────────────────
-class DiffTab(QWidget):
-    # Catppuccin-compatible diff colours
-    _BG_ADDED    = QColor("#1a3520")
-    _BG_REMOVED  = QColor("#3a1a22")
-    _BG_MODIFIED = QColor("#2e2a10")
-    _FG_ADDED    = QColor("#a6e3a1")
-    _FG_REMOVED  = QColor("#f38ba8")
-    _FG_MODIFIED = QColor("#f9e2af")
-
-    def __init__(
-        self,
-        tab_a: "DocumentTab",
-        tab_b: "DocumentTab",
-        language: Language,
-        parent: Optional[QWidget] = None,
-    ) -> None:
-        super().__init__(parent)
-        self._tab_a = tab_a
-        self._tab_b = tab_b
-        self._language = language
-        self._only_diffs = False
-        self._sort_mode = SortMode.NONE
-        self._find_matches: list[QTreeWidgetItem] = []
-        self._find_idx = -1
-        self._build_widgets()
-        # Live updates: refresh whenever either source document changes
-        self._tab_a.content_changed.connect(self.refresh)
-        self._tab_b.content_changed.connect(self.refresh)
-        self.refresh()
-
-    # ── Widget construction ───────────────────────────────────────────────
-    def _build_widgets(self) -> None:
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(6, 6, 6, 6)
-        layout.setSpacing(4)
-
-        # Header: filenames left / right
-        header = QHBoxLayout()
-        self._label_a = QLabel()
-        self._label_a.setStyleSheet("font-weight: bold; color: #89b4fa; padding: 2px 0;")
-        self._label_b = QLabel()
-        self._label_b.setStyleSheet("font-weight: bold; color: #a6e3a1; padding: 2px 0;")
-        header.addWidget(self._label_a)
-        header.addStretch()
-        header.addWidget(self._label_b)
-        layout.addLayout(header)
-
-        # Options / summary bar
-        opts = QHBoxLayout()
-        self._only_diffs_check = QCheckBox()
-        self._only_diffs_check.setChecked(False)
-        self._only_diffs_check.stateChanged.connect(self._on_toggle_filter)
-        opts.addWidget(self._only_diffs_check)
-        opts.addSpacing(16)
-        self._sort_label = QLabel()
-        self._sort_label.setStyleSheet("color: #a6adc8;")
-        opts.addWidget(self._sort_label)
-        self._sort_combo = QComboBox()
-        self._sort_combo.setFixedWidth(220)
-        self._sort_combo.currentIndexChanged.connect(self._on_sort_changed)
-        opts.addWidget(self._sort_combo)
-        opts.addStretch()
-        self._summary_label = QLabel()
-        self._summary_label.setStyleSheet("color: #a6adc8; font-size: 12px;")
-        opts.addWidget(self._summary_label)
-        layout.addLayout(opts)
-
-        # Main tree: Section/Key | Value A | Value B | Status
-        self._tree = QTreeWidget()
-        self._tree.setColumnCount(4)
-        self._tree.setAlternatingRowColors(False)
-        self._tree.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
-        hdr = self._tree.header()
-        hdr.setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)
-        hdr.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-        hdr.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
-        hdr.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
-        layout.addWidget(self._tree)
-
-        # ── Inline find bar (hidden by default) ───────────────────────────
-        self._find_bar_widget = QWidget()
-        self._find_bar_widget.setVisible(False)
-        find_layout = QHBoxLayout(self._find_bar_widget)
-        find_layout.setContentsMargins(4, 2, 4, 2)
-        find_layout.setSpacing(4)
-
-        self._find_label = QLabel()
-        self._find_edit = QLineEdit()
-        self._find_edit.setMinimumWidth(180)
-        self._find_edit.returnPressed.connect(lambda: self._do_find(forward=True))
-        self._find_edit.textChanged.connect(self._reset_find)
-
-        _btn_font = QFont()
-        _btn_font.setPointSize(15)
-        self._find_prev_btn = QPushButton("◀")
-        self._find_prev_btn.setFont(_btn_font)
-        self._find_prev_btn.setFixedSize(38, 28)
-        self._find_prev_btn.clicked.connect(lambda: self._do_find(forward=False))
-        self._find_next_btn = QPushButton("▶")
-        self._find_next_btn.setFont(_btn_font)
-        self._find_next_btn.setFixedSize(38, 28)
-        self._find_next_btn.clicked.connect(lambda: self._do_find(forward=True))
-        self._find_case_check = QCheckBox()
-        self._find_case_check.stateChanged.connect(self._reset_find)
-        self._find_status = QLabel()
-        self._find_status.setMinimumWidth(150)
-        self._find_status.setStyleSheet("color: #a6adc8;")
-        self._find_close_btn = QPushButton("✖")
-        self._find_close_btn.setFont(_btn_font)
-        self._find_close_btn.setFixedSize(38, 28)
-        self._find_close_btn.clicked.connect(self._find_bar_widget.hide)
-
-        find_layout.addWidget(self._find_label)
-        find_layout.addWidget(self._find_edit)
-        find_layout.addWidget(self._find_prev_btn)
-        find_layout.addWidget(self._find_next_btn)
-        find_layout.addSpacing(8)
-        find_layout.addWidget(self._find_case_check)
-        find_layout.addSpacing(8)
-        find_layout.addWidget(self._find_status, 1)
-        find_layout.addWidget(self._find_close_btn)
-        layout.addWidget(self._find_bar_widget)
-
-        self._refresh_static_labels()
-
-    def _refresh_static_labels(self) -> None:
-        self._label_a.setText(f"A: {self._doc_name(self._tab_a)}")
-        self._label_b.setText(f"B: {self._doc_name(self._tab_b)}")
-        self._only_diffs_check.setText(translate(self._language, "diff_only_diffs"))
-        self._sort_label.setText(translate(self._language, "sort_group"))
-        sort_modes = [SortMode.NONE, SortMode.SECTIONS_ALPHA, SortMode.KEYS_ALPHA, SortMode.SECTIONS_AND_KEYS_ALPHA]
-        self._sort_combo.blockSignals(True)
-        self._sort_combo.clear()
-        self._sort_combo.addItems([
-            translate(self._language, "sort_none"),
-            translate(self._language, "sort_sections"),
-            translate(self._language, "sort_keys"),
-            translate(self._language, "sort_both"),
-        ])
-        self._sort_combo.setCurrentIndex(sort_modes.index(self._sort_mode))
-        self._sort_combo.blockSignals(False)
-        self._tree.setHeaderLabels([
-            translate(self._language, "diff_col_key"),
-            self._doc_name(self._tab_a),
-            self._doc_name(self._tab_b),
-            "",
-        ])
-        self._find_label.setText(translate(self._language, "find_label"))
-        self._find_case_check.setText(translate(self._language, "find_case_sensitive"))
-        self._find_prev_btn.setToolTip(translate(self._language, "find_prev"))
-        self._find_next_btn.setToolTip(translate(self._language, "find_next"))
-
-    def _doc_name(self, tab: "DocumentTab") -> str:
-        try:
-            doc = tab.doc
-            if doc and doc.source_path:
-                return doc.source_path.name
-        except RuntimeError:
-            pass
-        return translate(self._language, "tab_untitled")
-
-    # ── Public API ────────────────────────────────────────────────────────
-    def set_language(self, language: Language) -> None:
-        self._language = language
-        self._refresh_static_labels()
-        self.refresh()
-
-    def show_find(self) -> None:
-        self._find_bar_widget.setVisible(True)
-        self._find_edit.setFocus()
-        self._find_edit.selectAll()
-
-    def refresh(self) -> None:
-        try:
-            doc_a = self._tab_a.doc
-            doc_b = self._tab_b.doc
-        except RuntimeError:
-            return
-        if doc_a is None or doc_b is None:
-            self._tree.clear()
-            return
-
-        if self._sort_mode != SortMode.NONE:
-            doc_a = doc_a.sorted_copy(self._sort_mode)
-            doc_b = doc_b.sorted_copy(self._sort_mode)
-
-        diff = IniDiff.compare(doc_a, doc_b)
-        self._refresh_static_labels()
-        self._tree.clear()
-        self._find_matches = []
-        self._find_idx = -1
-
-        for sec_diff in diff.sections:
-            if self._only_diffs and sec_diff.status == DiffStatus.UNCHANGED:
-                continue
-
-            sec_item = QTreeWidgetItem(self._tree)
-            sec_item.setText(0, f"[{sec_diff.name}]")
-            sec_item.setText(3, self._status_symbol(sec_diff.status))
-            font = QFont()
-            font.setBold(True)
-            sec_item.setFont(0, font)
-            self._colorize(sec_item, sec_diff.status, cols=(0, 3))
-
-            for ed in sec_diff.entries:
-                if self._only_diffs and ed.status == DiffStatus.UNCHANGED:
-                    continue
-                row = QTreeWidgetItem(sec_item)
-                row.setText(0, ed.key)
-                row.setText(1, ed.value_a or "")
-                row.setText(2, ed.value_b or "")
-                row.setText(3, self._status_symbol(ed.status))
-                self._colorize(row, ed.status, cols=range(4))
-
-            sec_item.setExpanded(True)
-
-        self._summary_label.setText(
-            translate(
-                self._language,
-                "diff_summary",
-                modified=diff.count_modified(),
-                added=diff.count_added(),
-                removed=diff.count_removed(),
-                unchanged=diff.count_unchanged(),
-            )
-        )
-
-    # ── Private helpers ───────────────────────────────────────────────────
-    def _on_toggle_filter(self) -> None:
-        self._only_diffs = self._only_diffs_check.isChecked()
-        self.refresh()
-
-    def _on_sort_changed(self, idx: int) -> None:
-        modes = [SortMode.NONE, SortMode.SECTIONS_ALPHA, SortMode.KEYS_ALPHA, SortMode.SECTIONS_AND_KEYS_ALPHA]
-        self._sort_mode = modes[idx]
-        self.refresh()
-
-    def _reset_find(self) -> None:
-        self._find_matches = []
-        self._find_idx = -1
-        self._find_status.setText("")
-
-    def _collect_all_items(self) -> list[QTreeWidgetItem]:
-        items: list[QTreeWidgetItem] = []
-        for i in range(self._tree.topLevelItemCount()):
-            sec = self._tree.topLevelItem(i)
-            items.append(sec)
-            for j in range(sec.childCount()):
-                items.append(sec.child(j))
-        return items
-
-    def _do_find(self, forward: bool) -> None:
-        query = self._find_edit.text()
-        if not query:
-            self._find_status.setText("")
-            return
-        case = self._find_case_check.isChecked()
-        q = query if case else query.lower()
-
-        if not self._find_matches:
-            self._find_matches = []
-            for item in self._collect_all_items():
-                texts = [item.text(c) for c in range(self._tree.columnCount())]
-                haystack = " ".join(texts) if case else " ".join(t.lower() for t in texts)
-                if q in haystack:
-                    self._find_matches.append(item)
-            self._find_idx = -1
-
-        if not self._find_matches:
-            self._find_status.setText(translate(self._language, "find_not_found"))
-            return
-
-        self._find_idx = (self._find_idx + (1 if forward else -1)) % len(self._find_matches)
-        item = self._find_matches[self._find_idx]
-        self._tree.setCurrentItem(item)
-        self._tree.scrollToItem(item, QAbstractItemView.ScrollHint.PositionAtTop)
-        total = len(self._find_matches)
-        self._find_status.setText(
-            f"{translate(self._language, 'find_count', count=total)}"
-            f" ({self._find_idx + 1}/{total})"
-        )
-
-    def keyPressEvent(self, event) -> None:  # type: ignore[override]
-        if event.key() == Qt.Key.Key_Escape and self._find_bar_widget.isVisible():
-            self._find_bar_widget.hide()
-        else:
-            super().keyPressEvent(event)
-
-    @staticmethod
-    def _status_symbol(status: DiffStatus) -> str:
-        return {
-            DiffStatus.ADDED:     "＋",
-            DiffStatus.REMOVED:   "－",
-            DiffStatus.MODIFIED:  "≠",
-            DiffStatus.UNCHANGED: "＝",
-        }[status]
-
-    def _colorize(self, item: QTreeWidgetItem, status: DiffStatus, cols) -> None:
-        if status == DiffStatus.UNCHANGED:
-            return
-        bg, fg = {
-            DiffStatus.ADDED:    (self._BG_ADDED,    self._FG_ADDED),
-            DiffStatus.REMOVED:  (self._BG_REMOVED,  self._FG_REMOVED),
-            DiffStatus.MODIFIED: (self._BG_MODIFIED, self._FG_MODIFIED),
-        }[status]
-        bg_brush = QBrush(bg)
-        fg_brush = QBrush(fg)
-        for c in cols:
-            item.setBackground(c, bg_brush)
-            item.setForeground(c, fg_brush)
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Dialog for selecting which two documents to compare
-# ─────────────────────────────────────────────────────────────────────────────
-class DiffSelectDialog(QDialog):
-    def __init__(
-        self,
-        tabs: list[tuple[str, "DocumentTab"]],
-        language: Language,
-        parent: Optional[QWidget] = None,
-    ) -> None:
-        super().__init__(parent)
-        self.setWindowTitle(translate(language, "diff_select_title"))
-        self.setMinimumWidth(380)
-
-        layout = QVBoxLayout(self)
-        form = QFormLayout()
-
-        self._combo_a = QComboBox()
-        self._combo_b = QComboBox()
-        for label, tab in tabs:
-            self._combo_a.addItem(label, tab)
-            self._combo_b.addItem(label, tab)
-        if len(tabs) >= 2:
-            self._combo_b.setCurrentIndex(1)
-
-        form.addRow(translate(language, "diff_select_a"), self._combo_a)
-        form.addRow(translate(language, "diff_select_b"), self._combo_b)
-        layout.addLayout(form)
-
-        buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
-        )
-        buttons.accepted.connect(self.accept)
-        buttons.rejected.connect(self.reject)
-        layout.addWidget(buttons)
-
-    def selected_tabs(self) -> tuple["DocumentTab", "DocumentTab"]:
-        return self._combo_a.currentData(), self._combo_b.currentData()
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Main window
-# ─────────────────────────────────────────────────────────────────────────────
 class MainWindow(QMainWindow):
     APP_NAME = "ini-file-editor"
 
@@ -1459,7 +85,6 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(self._t("status_ready"))
         self.setAcceptDrops(True)
 
-    # ── Helpers ───────────────────────────────────────────────────────────
     def _t(self, key: str, **kwargs: object) -> str:
         return translate(self._language, key, **kwargs)
 
@@ -1467,7 +92,6 @@ class MainWindow(QMainWindow):
         w = self._file_tabs.currentWidget()
         return w if isinstance(w, DocumentTab) else None
 
-    # ── Tab management ────────────────────────────────────────────────────
     def _new_tab(self, doc: Optional[IniDocument] = None) -> DocumentTab:
         tab = DocumentTab(self._language, self._current_sort, self._current_format)
         tab.content_changed.connect(lambda: self._on_tab_content_changed(tab))
@@ -1550,7 +174,6 @@ class MainWindow(QMainWindow):
             self._format_combo.blockSignals(False)
         self._update_window_title()
 
-    # ── Translations ──────────────────────────────────────────────────────
     def _update_translations(self) -> None:
         self._update_window_title()
         self._sort_group.setTitle(self._t("sort_group"))
@@ -1602,7 +225,6 @@ class MainWindow(QMainWindow):
         self._language_combo.setItemText(1, "English")
         self._language_combo.setCurrentIndex(0 if self._language == Language.DE else 1)
         self._language_combo.blockSignals(False)
-        # Propagate labels into all open document tabs
         for i in range(self._file_tabs.count()):
             tab = self._file_tabs.widget(i)
             if isinstance(tab, DocumentTab):
@@ -1630,7 +252,6 @@ class MainWindow(QMainWindow):
         if tab is not None:
             tab.load_into_ui()
 
-    # ── UI construction ───────────────────────────────────────────────────
     def _build_ui(self) -> None:
         central = QWidget()
         self.setCentralWidget(central)
@@ -1696,14 +317,12 @@ class MainWindow(QMainWindow):
 
         root_layout.addLayout(ctrl_bar)
 
-        # Outer tab widget – one tab per open file
         self._file_tabs = QTabWidget()
         self._file_tabs.setTabsClosable(True)
         self._file_tabs.tabCloseRequested.connect(self._close_tab)
         self._file_tabs.currentChanged.connect(self._on_file_tab_changed)
         root_layout.addWidget(self._file_tabs, 1)
 
-        # Find / Replace bar (hidden until triggered)
         self._find_bar = FindBar(self._language)
         self._find_bar.find_next_requested.connect(self._find_next)
         self._find_bar.find_prev_requested.connect(self._find_prev)
@@ -1711,7 +330,6 @@ class MainWindow(QMainWindow):
         self._find_bar.replace_all_requested.connect(self._replace_all)
         root_layout.addWidget(self._find_bar)
 
-        # Start with one empty tab
         self._new_tab()
 
     def _update_logo_pixmap(self) -> None:
@@ -1859,7 +477,6 @@ class MainWindow(QMainWindow):
             self._t("action_add_section"), self._add_section_to_current_tab
         )
 
-    # ── Dark theme ────────────────────────────────────────────────────────
     def _apply_dark_theme(self) -> None:
         self.setStyleSheet("""
             QMainWindow, QWidget {
@@ -1920,10 +537,8 @@ class MainWindow(QMainWindow):
             QSplitter::handle { background-color: #45475a; width: 2px; }
         """)
 
-    # ── Document management ───────────────────────────────────────────────
     def _new_document(self) -> None:
         tab = self._current_tab()
-        # Reuse the current tab only if it is a pristine empty tab
         if tab is not None and tab.doc is None and not tab.dirty:
             tab.load_document(IniDocument())
             self._set_tab_title(self._file_tabs.currentIndex(), tab)
@@ -2077,7 +692,6 @@ class MainWindow(QMainWindow):
         except Exception as exc:
             QMessageBox.critical(self, self._t("error_export"), str(exc))
 
-    # ── Compare / diff ────────────────────────────────────────────────────
     def _open_diff_tab(self) -> None:
         tabs_with_docs: list[tuple[str, DocumentTab]] = []
         for i in range(self._file_tabs.count()):
@@ -2109,7 +723,6 @@ class MainWindow(QMainWindow):
         idx = self._file_tabs.addTab(diff_widget, f"⇔ {name_a} ↔ {name_b}")
         self._file_tabs.setCurrentIndex(idx)
 
-    # ── Slots ─────────────────────────────────────────────────────────────
     def _on_sort_changed(self, idx: int) -> None:
         modes = [SortMode.NONE, SortMode.SECTIONS_ALPHA, SortMode.KEYS_ALPHA, SortMode.SECTIONS_AND_KEYS_ALPHA]
         self._current_sort = modes[idx]
@@ -2155,7 +768,6 @@ class MainWindow(QMainWindow):
             self._t("about_text", app=self.APP_NAME, version=_APP_VERSION)
         )
 
-    # ── Find & Replace ────────────────────────────────────────────────────
     def _show_find_dialog(self) -> None:
         w = self._file_tabs.currentWidget()
         if isinstance(w, DiffTab):
@@ -2302,7 +914,6 @@ class MainWindow(QMainWindow):
             return self._count_all_in_text_edit(text_edit, search_text, case_sensitive, whole_words)
         return 0
 
-    # ── Drag & Drop ───────────────────────────────────────────────────────
     _INI_SUFFIXES = {".ini", ".cfg", ".conf"}
 
     def _is_valid_ini_url(self, url: QUrl) -> bool:
@@ -2357,9 +968,6 @@ class MainWindow(QMainWindow):
             event.ignore()
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Entry point
-# ─────────────────────────────────────────────────────────────────────────────
 def main() -> None:
     app = QApplication(sys.argv)
     app.setApplicationName("ini-file-editor")

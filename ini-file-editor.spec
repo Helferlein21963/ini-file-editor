@@ -22,19 +22,24 @@ LOGO_PATH = os.path.join(ASSETS_DIR, 'logo.png')
 ICON_PNG_PATH = os.path.join(ASSETS_DIR, 'icon.png')
 ICON_PATH = os.path.join(ASSETS_DIR, 'icon.ico')
 
-# Auto-generate icon.ico from icon.png if missing or stale.
-if os.path.isfile(ICON_PNG_PATH):
+# Auto-generate icon.ico from icon*.png if missing or stale.
+import glob
+from pathlib import Path
+
+icon_sources = sorted(glob.glob(os.path.join(ASSETS_DIR, 'icon*.png')))
+if icon_sources:
     ico_stale = (
         not os.path.isfile(ICON_PATH)
-        or os.path.getmtime(ICON_PNG_PATH) > os.path.getmtime(ICON_PATH)
+        or max(os.path.getmtime(p) for p in icon_sources) > os.path.getmtime(ICON_PATH)
     )
     if ico_stale:
         try:
-            from src.convert_icon import convert_png_to_ico
-            convert_png_to_ico(ICON_PNG_PATH, ICON_PATH)
-            print(f'[spec] Generated {ICON_PATH} from {ICON_PNG_PATH}')
+            from src.convert_icon import convert_pngs_to_ico
+            convert_pngs_to_ico([Path(p) for p in icon_sources], Path(ICON_PATH))
+            labels = ", ".join(os.path.basename(p) for p in icon_sources)
+            print(f'[spec] Generated {ICON_PATH} from [{labels}]')
         except ImportError:
-            print('[spec] Pillow not installed — skipping icon.png -> icon.ico conversion')
+            print('[spec] Pillow not installed — skipping icon*.png -> icon.ico conversion')
 
 asset_datas = [
     (src, 'assets') for src in (LOGO_PATH, ICON_PATH) if os.path.isfile(src)

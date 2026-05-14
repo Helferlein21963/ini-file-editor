@@ -17,11 +17,20 @@ except Exception:
 
 generate(major, minor, patch)
 
+ASSETS_DIR = os.path.join(os.path.dirname(os.path.abspath(SPEC)), 'assets')
+LOGO_PATH = os.path.join(ASSETS_DIR, 'logo.png')
+ICON_PATH = os.path.join(ASSETS_DIR, 'icon.ico')
+
+asset_datas = [
+    (src, 'assets') for src in (LOGO_PATH, ICON_PATH) if os.path.isfile(src)
+]
+exe_icon = ICON_PATH if os.path.isfile(ICON_PATH) else None
+
 a = Analysis(
     ['main.py'],
     pathex=[],
     binaries=[],
-#    datas=[('src\\\\logo.png', 'src'), ('src\\\\icon.ico', 'src')],
+    datas=asset_datas,
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
@@ -52,5 +61,5 @@ exe = EXE(
     codesign_identity=None,
     entitlements_file=None,
     version='version_info.txt',
-#    icon='src\\icon.ico',
+    icon=exe_icon,
 )

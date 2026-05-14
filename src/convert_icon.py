@@ -20,11 +20,12 @@ def convert_png_to_ico(png_path: Path, ico_path: Path) -> None:
     img.save(ico_path, format='ICO', sizes=sizes)
 
 if __name__ == "__main__":
-    src_dir = Path(__file__).parent / "src"
-    png_path = src_dir / "icon.png"
-    ico_path = src_dir / "icon.ico"
+    assets_dir = Path(__file__).resolve().parent.parent / "assets"
+    png_path = assets_dir / "icon.png"
+    ico_path = assets_dir / "icon.ico"
 
     if png_path.exists():
+        assets_dir.mkdir(parents=True, exist_ok=True)
         convert_png_to_ico(png_path, ico_path)
         print(f"Converted {png_path} to {ico_path}")
     else:

@@ -89,9 +89,9 @@ class MainWindow(QMainWindow):
         self._apply_dark_theme()
 
         if hasattr(sys, '_MEIPASS'):
-            icon_path = Path(sys._MEIPASS) / "src" / "icon.ico"
+            icon_path = Path(sys._MEIPASS) / "assets" / "icon.ico"
         else:
-            icon_path = Path(__file__).resolve().parent / "icon.ico"
+            icon_path = Path(__file__).resolve().parent.parent / "assets" / "icon.ico"
         if icon_path.exists():
             self.setWindowIcon(QIcon(str(icon_path)))
 
@@ -312,9 +312,9 @@ class MainWindow(QMainWindow):
         self._logo_label: Optional[QLabel] = None
         self._logo_pixmap: Optional[QPixmap] = None
         if hasattr(sys, '_MEIPASS'):
-            logo_path = Path(sys._MEIPASS) / "src" / "logo.png"
+            logo_path = Path(sys._MEIPASS) / "assets" / "logo.png"
         else:
-            logo_path = Path(__file__).resolve().parent / "logo.png"
+            logo_path = Path(__file__).resolve().parent.parent / "assets" / "logo.png"
         if logo_path.exists():
             pixmap = QPixmap(str(logo_path))
             if not pixmap.isNull():

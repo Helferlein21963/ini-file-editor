@@ -92,7 +92,7 @@ build:exe:
   <<: *install_deps
   script:
     - pip install pyinstaller
-    - xvfb-run --auto-servernum pyinstaller --onefile --windowed --add-data "src/logo.png:src" --name ini-file-editor main.py
+    - xvfb-run --auto-servernum pyinstaller --onefile --windowed --add-data "assets/logo.png:assets" --name ini-file-editor main.py
     - ls -lh dist/
   artifacts:
     paths:

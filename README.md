@@ -128,7 +128,7 @@ Bevor die EXE gebaut wird, muss das PNG-Icon in das Windows-ICO-Format konvertie
 python src/convert_icon.py
 ```
 
-Das Skript liest `src/icon.png` und schreibt `src/icon.ico`.
+Das Skript liest `assets/icon.png` und schreibt `assets/icon.ico`.
 
 ### Executable mit PyInstaller bauen
 
@@ -139,7 +139,7 @@ Das Skript liest `src/icon.png` und schreibt `src/icon.ico`.
 **Executable erstellen (empfohlen):**
 
 ```bash
-python -m pyinstaller --onefile --windowed --add-data "src/logo.png;src" --icon="src/icon.ico" --name ini-file-editor main.py
+python -m pyinstaller --onefile --windowed --add-data "assets/logo.png;assets" --icon="assets/icon.ico" --name ini-file-editor main.py
 ```
 
 Das Executable wird erstellt in: `dist/ini-file-editor.exe`
@@ -147,8 +147,8 @@ Das Executable wird erstellt in: `dist/ini-file-editor.exe`
 **Optionen erklärt:**
 - `--onefile` – Alles in eine einzelne `.exe` packen
 - `--windowed` – Keine Konsole anzeigen (nur GUI)
-- `--add-data "src/logo.png;src"` – Logo-Datei in die Executable einbinden
-- `--icon="src/icon.ico"` – EXE-Icon festlegen
+- `--add-data "assets/logo.png;assets"` – Logo-Datei in die Executable einbinden
+- `--icon="assets/icon.ico"` – EXE-Icon festlegen
 - `--name ini-file-editor` – Name des Executables
 
 **Optional – Build mit der `.spec`-Datei (empfohlen):**
@@ -237,6 +237,7 @@ ini-file-editor/
 │   ├── document_tab.py            # DocumentTab (ein Editor-Pane pro Datei)
 │   ├── diff_tab.py                # DiffTab (Side-by-Side-Vergleich zweier Dokumente)
 │   └── main_window.py             # MainWindow + main() (Menüs, Toolbar, Tab-Verwaltung)
+├── assets/                       # Logo (logo.png) und Icon (icon.png/icon.ico)
 ├── scripts/
 │   └── generate_version_info.py  # Erzeugt version_info.txt für PyInstaller
 ├── tests/

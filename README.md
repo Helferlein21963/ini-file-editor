@@ -122,13 +122,18 @@ pip install -r requirements-dev.txt
 
 ### Icon konvertieren
 
-Bevor die EXE gebaut wird, muss das PNG-Icon in das Windows-ICO-Format konvertiert werden.
+Liegt eine `assets/icon.png` vor, generiert die PyInstaller-Spec beim Build automatisch eine
+passende `assets/icon.ico` (Multi-Resolution: 16/32/48/64/128/256), sofern die `.ico` fehlt
+oder älter als das PNG ist. Du musst also nichts vorab tun.
+
+Optional kann die Konvertierung auch manuell angestoßen werden:
 
 ```bash
 python src/convert_icon.py
 ```
 
-Das Skript liest `assets/icon.png` und schreibt `assets/icon.ico`.
+Das Skript liest `assets/icon.png` und schreibt `assets/icon.ico`. Benötigt `Pillow`
+(in `requirements-dev.txt` enthalten).
 
 ### Executable mit PyInstaller bauen
 

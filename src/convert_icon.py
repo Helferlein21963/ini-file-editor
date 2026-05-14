@@ -6,17 +6,12 @@ from pathlib import Path
 from PIL import Image
 
 def convert_png_to_ico(png_path: Path, ico_path: Path) -> None:
-    """Convert PNG to ICO format with multiple sizes."""
+    """Convert PNG to ICO format with multiple embedded sizes."""
     img = Image.open(png_path)
-    # Ensure square image
     size = max(img.size)
-    img = img.resize((size, size), Image.Resampling.LANCZOS)
-    # Create ICO with multiple sizes
-    sizes = [(16, 16), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)]
-    icons = []
-    for s in sizes:
-        if s[0] <= size:
-            icons.append(img.resize(s, Image.Resampling.LANCZOS))
+    if img.size != (size, size):
+        img = img.resize((size, size), Image.Resampling.LANCZOS)
+    sizes = [(s, s) for s in (16, 32, 48, 64, 128, 256) if s <= size]
     img.save(ico_path, format='ICO', sizes=sizes)
 
 if __name__ == "__main__":

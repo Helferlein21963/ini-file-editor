@@ -1,5 +1,9 @@
-"""
-main_window.py – PyQt6 main window for the INI Editor application.
+"""PyQt6 main window for the INI Editor application.
+
+Hosts the menu bar, toolbar, multi-tab file area, status bar, find bar, and
+all top-level actions. Each open file is shown in its own
+:class:`~document_tab.DocumentTab`; document comparison opens in a
+:class:`~diff_tab.DiffTab`.
 """
 from __future__ import annotations
 
@@ -61,9 +65,20 @@ except ModuleNotFoundError:
 
 
 class MainWindow(QMainWindow):
+    """Top-level application window.
+
+    Manages the bilingual UI, the tab area containing one
+    :class:`~document_tab.DocumentTab` per open file, file I/O actions,
+    export, find/replace, and the side-by-side diff view.
+
+    Attributes:
+        APP_NAME: Application name shown in the title bar and About dialog.
+    """
+
     APP_NAME = "ini-file-editor"
 
     def __init__(self) -> None:
+        """Construct the main window and open one empty document tab."""
         super().__init__()
         self._current_sort = SortMode.NONE
         self._current_format = ExportFormat.INI
@@ -557,7 +572,15 @@ class MainWindow(QMainWindow):
             return False
 
     def _open_file_paths(self, paths: list[str | Path]) -> None:
-        """Open each path in its own tab, reusing the current tab if it is a pristine empty tab."""
+        """Open each path in its own tab.
+
+        The current tab is reused if it is pristine (no document, not dirty);
+        every remaining path is opened in a new tab. Files that fail to parse
+        are reported via a dialog but do not abort the batch.
+
+        Args:
+            paths: One or more file paths to open.
+        """
         loaded = 0
         for i, path in enumerate(paths):
             path = str(path)
@@ -969,6 +992,11 @@ class MainWindow(QMainWindow):
 
 
 def main() -> None:
+    """Application entry point.
+
+    Boots :class:`QApplication`, shows the main window, and runs the Qt
+    event loop until the user closes the application.
+    """
     app = QApplication(sys.argv)
     app.setApplicationName("ini-file-editor")
     app.setOrganizationName("OpenSource")

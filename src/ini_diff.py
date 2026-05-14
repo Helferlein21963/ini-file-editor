@@ -1,6 +1,8 @@
-"""
-ini_diff.py – Structural diff between two IniDocument instances.
-Compares only sections and key/value pairs; comments are intentionally ignored.
+"""Structural diff between two :class:`~ini_parser.IniDocument` instances.
+
+Only the structural payload — sections and ``key=value`` pairs — is compared.
+Comments are intentionally ignored so cosmetic changes do not appear as
+content diffs.
 """
 from __future__ import annotations
 
@@ -15,14 +17,33 @@ except ModuleNotFoundError:
 
 
 class DiffStatus(Enum):
+    """Per-entry / per-section diff classification.
+
+    Attributes:
+        UNCHANGED: Present in both documents with equal value.
+        ADDED: Present in document B only.
+        REMOVED: Present in document A only.
+        MODIFIED: Present in both, but the value differs (entries) or at
+            least one child entry was added, removed, or modified (sections).
+    """
+
     UNCHANGED = auto()
-    ADDED = auto()    # exists in B only
-    REMOVED = auto()  # exists in A only
-    MODIFIED = auto() # exists in both, value differs
+    ADDED = auto()
+    REMOVED = auto()
+    MODIFIED = auto()
 
 
 @dataclass
 class EntryDiff:
+    """Diff record for a single ``key=value`` pair.
+
+    Attributes:
+        key: The entry key.
+        status: Classification relative to documents A and B.
+        value_a: Value in document A, or ``None`` if the entry was added in B.
+        value_b: Value in document B, or ``None`` if the entry was removed in B.
+    """
+
     key: str
     status: DiffStatus
     value_a: Optional[str] = None
@@ -31,6 +52,15 @@ class EntryDiff:
 
 @dataclass
 class SectionDiff:
+    """Diff record for a single section, with per-entry detail.
+
+    Attributes:
+        name: Section name.
+        status: Overall section status. A section is ``MODIFIED`` if it
+            exists in both documents but any child entry differs.
+        entries: Per-entry diff records.
+    """
+
     name: str
     status: DiffStatus
     entries: list[EntryDiff] = field(default_factory=list)
@@ -38,30 +68,52 @@ class SectionDiff:
 
 @dataclass
 class DocumentDiff:
+    """Diff result spanning every section of two compared documents.
+
+    Attributes:
+        sections: Per-section diff records in display order — sections of A
+            first, then any sections that exist only in B.
+    """
+
     sections: list[SectionDiff] = field(default_factory=list)
 
     @property
     def has_differences(self) -> bool:
+        """``True`` if any section is not ``UNCHANGED``."""
         return any(s.status != DiffStatus.UNCHANGED for s in self.sections)
 
     def count_added(self) -> int:
+        """Number of entries present only in document B."""
         return sum(1 for s in self.sections for e in s.entries if e.status == DiffStatus.ADDED)
 
     def count_removed(self) -> int:
+        """Number of entries present only in document A."""
         return sum(1 for s in self.sections for e in s.entries if e.status == DiffStatus.REMOVED)
 
     def count_modified(self) -> int:
+        """Number of entries present in both but with a different value."""
         return sum(1 for s in self.sections for e in s.entries if e.status == DiffStatus.MODIFIED)
 
     def count_unchanged(self) -> int:
+        """Number of entries with identical values in both documents."""
         return sum(1 for s in self.sections for e in s.entries if e.status == DiffStatus.UNCHANGED)
 
 
 class IniDiff:
-    """Compares two IniDocument instances structurally (sections and key/value pairs only)."""
+    """Structural comparator for :class:`~ini_parser.IniDocument` instances."""
 
     @staticmethod
     def compare(doc_a: IniDocument, doc_b: IniDocument) -> DocumentDiff:
+        """Compute a structural diff of two documents.
+
+        Args:
+            doc_a: Left-hand side document.
+            doc_b: Right-hand side document.
+
+        Returns:
+            A :class:`DocumentDiff` whose sections appear in A's order, then
+            any sections unique to B in B's order.
+        """
         result = DocumentDiff()
 
         names_a = {s.name for s in doc_a.sections}

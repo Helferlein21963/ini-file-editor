@@ -1,5 +1,10 @@
-"""
-ini_tree_widget.py – Hierarchical tree widget for sections and entries.
+"""Hierarchical tree widget showing sections and their entries.
+
+Top-level items are sections; child items are the section's entries.
+Double-clicking an item opens the corresponding edit dialog; the context
+menu adds, edits, and deletes sections and entries. All mutations emit
+:attr:`IniTreeWidget.about_to_change` (so the host can snapshot for undo)
+followed by :attr:`IniTreeWidget.document_changed`.
 """
 from __future__ import annotations
 
@@ -29,10 +34,21 @@ except ModuleNotFoundError:
 
 
 class IniTreeWidget(QTreeWidget):
+    """Tree view of the loaded :class:`~ini_parser.IniDocument`.
+
+    Signals:
+        document_changed: Emitted after the document was mutated by any tree
+            action (edit, add, delete).
+        about_to_change: Emitted *before* a mutation is applied. The hosting
+            :class:`~document_tab.DocumentTab` connects this to
+            :meth:`~document_tab.DocumentTab.push_undo_state`.
+    """
+
     document_changed = pyqtSignal()
     about_to_change = pyqtSignal()
 
     def __init__(self, language: Language, parent: Optional[QWidget] = None) -> None:
+        """Build the widget. Pass ``language`` for initial header labels."""
         super().__init__(parent)
         self._language = language
         self.setColumnCount(3)
@@ -63,10 +79,20 @@ class IniTreeWidget(QTreeWidget):
         ])
 
     def load_document(self, doc: IniDocument) -> None:
+        """Replace the visualised document and rebuild the tree.
+
+        Args:
+            doc: Document to display. The tree keeps a reference, so later
+                mutations through tree actions modify ``doc`` in place.
+        """
         self._doc = doc
         self._refresh()
 
     def set_sort_mode(self, mode: SortMode) -> None:
+        """Apply a display-only sort mode and rebuild the tree.
+
+        The underlying document is **not** mutated; sorting is purely visual.
+        """
         self._sort_mode = mode
         self._refresh()
 

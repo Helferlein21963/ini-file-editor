@@ -1,5 +1,8 @@
-"""
-diff_tab.py – Side-by-side comparison of two open INI documents.
+"""Side-by-side comparison view for two open INI documents.
+
+Wraps :class:`~ini_diff.IniDiff` results in a sortable, filterable tree with
+status badges (added / removed / modified / unchanged) and a Find bar. The
+view auto-refreshes when either source document is mutated.
 """
 from __future__ import annotations
 
@@ -33,6 +36,13 @@ if TYPE_CHECKING:
 
 
 class DiffTab(QWidget):
+    """Compares two :class:`~document_tab.DocumentTab` documents in a tree view.
+
+    Connects to ``content_changed`` of both source tabs so the diff stays
+    live as the user edits either side. Provides per-status colouring,
+    a "differences only" filter, a sort selector, and an embedded find bar.
+    """
+
     _BG_ADDED    = QColor("#1a3520")
     _BG_REMOVED  = QColor("#3a1a22")
     _BG_MODIFIED = QColor("#2e2a10")
@@ -47,6 +57,14 @@ class DiffTab(QWidget):
         language: Language,
         parent: Optional[QWidget] = None,
     ) -> None:
+        """Wire up the view and trigger an initial diff.
+
+        Args:
+            tab_a: Left-hand document tab.
+            tab_b: Right-hand document tab.
+            language: Initial UI language.
+            parent: Optional Qt parent.
+        """
         super().__init__(parent)
         self._tab_a = tab_a
         self._tab_b = tab_b
@@ -192,11 +210,13 @@ class DiffTab(QWidget):
         self.refresh()
 
     def show_find(self) -> None:
+        """Reveal the embedded find bar and focus the search field."""
         self._find_bar_widget.setVisible(True)
         self._find_edit.setFocus()
         self._find_edit.selectAll()
 
     def refresh(self) -> None:
+        """Recompute the diff from the two source tabs and rebuild the tree."""
         try:
             doc_a = self._tab_a.doc
             doc_b = self._tab_b.doc

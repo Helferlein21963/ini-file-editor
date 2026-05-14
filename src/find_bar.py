@@ -1,5 +1,8 @@
-"""
-find_bar.py – Embedded find/replace bar shown at the bottom of the main window.
+"""Embedded find/replace bar shown at the bottom of the main window.
+
+The bar emits signals for each user action; the host (typically
+:class:`~main_window.MainWindow`) performs the actual search/replace on the
+target widget so the same bar can drive different panes.
 """
 from __future__ import annotations
 
@@ -19,12 +22,27 @@ except ModuleNotFoundError:
 
 
 class FindBar(QWidget):
+    """Inline find/replace bar.
+
+    Hidden by default. Call :meth:`show_find` or :meth:`show_replace` to
+    reveal it. The host wires up the four signals to its own search logic.
+
+    Signals:
+        find_next_requested: User pressed Enter, the Next button, or
+            otherwise asked for the next forward match.
+        find_prev_requested: User asked for the previous match.
+        replace_requested: User pressed the Replace button to replace the
+            current selection if it matches.
+        replace_all_requested: User pressed the Replace-All button.
+    """
+
     find_next_requested = pyqtSignal()
     find_prev_requested = pyqtSignal()
     replace_requested = pyqtSignal()
     replace_all_requested = pyqtSignal()
 
     def __init__(self, language: Language, parent: Optional[QWidget] = None) -> None:
+        """Build the bar in hidden state."""
         super().__init__(parent)
         self.setVisible(False)
 
@@ -101,12 +119,14 @@ class FindBar(QWidget):
         self._replace_widget.setVisible(False)
 
     def show_find(self) -> None:
+        """Reveal the bar in find-only mode and focus the search field."""
         self._replace_widget.setVisible(False)
         self.setVisible(True)
         self._search_edit.setFocus()
         self._search_edit.selectAll()
 
     def show_replace(self) -> None:
+        """Reveal the bar in find-and-replace mode and focus the search field."""
         self._replace_widget.setVisible(True)
         self.setVisible(True)
         self._search_edit.setFocus()

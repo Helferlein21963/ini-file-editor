@@ -1,5 +1,8 @@
-"""
-document_tab.py – One self-contained editor pane per open INI file.
+"""Self-contained editor pane shown for one open INI file.
+
+Each :class:`DocumentTab` owns its own :class:`~ini_parser.IniDocument`,
+tree widget, preview pane, header editor, and undo/redo stacks. The main
+window holds one tab per open file.
 """
 from __future__ import annotations
 
@@ -34,7 +37,18 @@ except ModuleNotFoundError:
 
 
 class DocumentTab(QSplitter):
-    """Holds one IniDocument with its own tree, preview, and header editor."""
+    """One open INI file with its own UI state and undo history.
+
+    The tab is a horizontal splitter: the tree widget on the left, the
+    preview / header tabs on the right. Undo and redo work on document
+    snapshots (``IniDocument.clone()``) rather than Qt's :class:`QUndoStack`.
+
+    Signals:
+        content_changed: Emitted whenever the underlying document is mutated
+            (entry edited, section added, preview re-parsed, undo, etc.).
+            The main window connects to this to update tab titles and the
+            dirty marker.
+    """
 
     content_changed = pyqtSignal()
 
@@ -45,6 +59,14 @@ class DocumentTab(QSplitter):
         export_format: ExportFormat,
         parent: Optional[QWidget] = None,
     ) -> None:
+        """Build the tab UI.
+
+        Args:
+            language: Initial UI language for child widgets.
+            sort_mode: Initial sort mode applied to the preview and tree.
+            export_format: Initial export format used for the preview pane.
+            parent: Optional Qt parent.
+        """
         super().__init__(Qt.Orientation.Horizontal, parent)
         self._language = language
         self._sort_mode = sort_mode
@@ -144,6 +166,11 @@ class DocumentTab(QSplitter):
         self._header_edit.setPlaceholderText(header_placeholder)
 
     def push_undo_state(self) -> None:
+        """Snapshot the current document onto the undo stack.
+
+        Clears the redo stack and caps the undo stack at 100 entries.
+        Called by widgets before they mutate the document.
+        """
         if self._doc is None:
             return
         self._undo_stack.append(self._doc.clone())
@@ -152,6 +179,7 @@ class DocumentTab(QSplitter):
             self._undo_stack.pop(0)
 
     def undo(self) -> None:
+        """Restore the previous document snapshot, if any."""
         if not self._undo_stack or self._doc is None:
             return
         self._redo_stack.append(self._doc.clone())
@@ -162,6 +190,7 @@ class DocumentTab(QSplitter):
         self.content_changed.emit()
 
     def redo(self) -> None:
+        """Replay the most recently undone document snapshot, if any."""
         if not self._redo_stack or self._doc is None:
             return
         self._undo_stack.append(self._doc.clone())
@@ -172,6 +201,12 @@ class DocumentTab(QSplitter):
         self.content_changed.emit()
 
     def load_document(self, doc: IniDocument) -> None:
+        """Replace the current document and reset undo/redo state.
+
+        Args:
+            doc: New document to display. The tab takes ownership; no clone
+                is made.
+        """
         self._doc = doc
         self._dirty = False
         self._undo_stack.clear()
@@ -191,6 +226,12 @@ class DocumentTab(QSplitter):
         self._refresh_preview()
 
     def sync_doc_from_preview(self) -> None:
+        """Re-parse the preview text and adopt it as the new document.
+
+        Used after the user edits the preview pane (currently triggered by
+        find/replace). Parse failures are swallowed silently so a transient
+        invalid state during typing does not destroy data.
+        """
         text = self._preview_edit.document().toPlainText()
         try:
             new_doc = IniParser.parse_string(text)

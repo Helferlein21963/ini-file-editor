@@ -1,5 +1,8 @@
-"""
-translations.py – Language enum and UI string table for the INI Editor.
+"""UI string table and language enum for the bilingual interface.
+
+All user-facing text is keyed by a stable string identifier; every key must
+have an entry in both :attr:`Language.DE` and :attr:`Language.EN`. Use
+:func:`translate` to look a key up at runtime.
 """
 from __future__ import annotations
 
@@ -7,6 +10,13 @@ from enum import Enum
 
 
 class Language(Enum):
+    """Supported UI languages.
+
+    Attributes:
+        DE: German.
+        EN: English.
+    """
+
     DE = "de"
     EN = "en"
 
@@ -232,5 +242,16 @@ TRANSLATIONS = {
 
 
 def translate(lang: Language, key: str, **kwargs: object) -> str:
+    """Look up ``key`` in the table for ``lang`` and format it.
+
+    Args:
+        lang: Target language.
+        key: Translation key. If missing, the key itself is returned, which
+            makes it visible in the UI for quick spotting.
+        **kwargs: ``str.format`` substitutions, e.g. ``path="/x/y.ini"``.
+
+    Returns:
+        The translated (and formatted) string.
+    """
     text = TRANSLATIONS[lang].get(key, key)
     return text.format(**kwargs)

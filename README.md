@@ -18,6 +18,7 @@ Ein kommentarerhaltender INI-Datei-Editor mit **PyQt6-GUI**, flexibler Sortierun
 - [Projektstruktur](#projektstruktur)
 - [Architektur](#architektur)
 - [Tests ausführen](#tests-ausführen)
+- [Dokumentation bauen](#dokumentation-bauen)
 - [DevOps / CI-CD Pipeline](#devops--cicd-pipeline)
   - [Versionierung](#versionierung)
 - [Docker](#docker)
@@ -311,6 +312,90 @@ pytest tests/ -q
 ```
 
 Testabdeckung der Kern-Engine: **>95 %** (GUI-Code wird im Headless-CI übersprungen).
+
+---
+
+## Dokumentation bauen
+
+Die API-Dokumentation wird mit [Sphinx](https://www.sphinx-doc.org/) aus den Google-Style-Docstrings im Quellcode generiert. Die Konfiguration liegt in [`docs/conf.py`](docs/conf.py); Theme: [Furo](https://pradyunsg.me/furo/).
+
+**Voraussetzung** – Dev-Dependencies installieren:
+
+```bash
+pip install -r requirements-dev.txt
+```
+
+### Einmaliger Build (HTML)
+
+```powershell
+# Windows
+.\docs\make.bat html
+
+# Linux / macOS
+make -C docs html
+```
+
+Plattformneutral und identisch zum Pipeline-Befehl:
+
+```bash
+sphinx-build -b html docs docs/_build/html
+```
+
+Ergebnis öffnen:
+
+```powershell
+# Windows
+start docs\_build\html\index.html
+
+# Linux / macOS
+open docs/_build/html/index.html   # macOS
+xdg-open docs/_build/html/index.html   # Linux
+```
+
+### Live-Vorschau via localhost
+
+Während des Schreibens von Docstrings ist ein Live-Reload-Server am angenehmsten:
+
+```bash
+sphinx-autobuild docs docs/_build/html
+```
+
+Anschließend im Browser aufrufen:
+
+```
+http://127.0.0.1:8000
+```
+
+Bei jedem Speichern in `src/` oder `docs/` werden die Seiten automatisch neu gebaut und der Browser reloaded.
+
+### Markdown-Build (für Azure DevOps Wiki)
+
+Die Pipeline veröffentlicht zusätzlich eine Markdown-Variante im Project Wiki. Dasselbe Output lokal erzeugen:
+
+```powershell
+# Windows
+.\docs\make.bat markdown
+
+# Plattformneutral
+sphinx-build -b markdown docs docs/_build/markdown
+```
+
+Pro RST-Quelldatei entsteht eine `.md`-Datei in [`docs/_build/markdown/`](docs/_build/markdown/). Die Pipeline pusht genau diese Dateien in den `<projekt>.wiki`-Git-Repo unter `API/`.
+
+**Lokale Vorschau** der Markdown-Ausgabe (am nächsten an der Azure-DevOps-Wiki-Darstellung):
+
+```bash
+# In VS Code: Datei öffnen, Strg+Shift+V → Side-by-Side-Preview
+# Oder mit grip im Browser (GitHub-Style-Renderer):
+pip install grip
+grip docs/_build/markdown/index.md
+```
+
+### Build-Verzeichnis aufräumen
+
+```powershell
+.\docs\make.bat clean
+```
 
 ---
 

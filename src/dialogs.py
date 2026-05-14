@@ -1,5 +1,8 @@
-"""
-dialogs.py – Modal dialogs used by the INI Editor (entry/section edit, diff selection).
+"""Modal dialogs used by the INI Editor.
+
+Provides :class:`EntryEditDialog` and :class:`SectionEditDialog` for editing
+key-value pairs and section metadata, and :class:`DiffSelectDialog` for
+picking two open documents to compare.
 """
 from __future__ import annotations
 
@@ -25,7 +28,15 @@ if TYPE_CHECKING:
 
 
 class EntryEditDialog(QDialog):
+    """Modal dialog for editing one :class:`~ini_parser.IniEntry`.
+
+    Call :meth:`apply_to_entry` after :meth:`exec` returns ``Accepted`` to
+    write the user input back into the entry. The entry is not mutated
+    automatically.
+    """
+
     def __init__(self, entry: IniEntry, language: Language, parent: Optional[QWidget] = None) -> None:
+        """Pre-fill the form with the values from ``entry``."""
         super().__init__(parent)
         self._language = language
         self.setWindowTitle(translate(language, "entry_edit_title"))
@@ -55,6 +66,7 @@ class EntryEditDialog(QDialog):
         layout.addWidget(buttons)
 
     def apply_to_entry(self) -> None:
+        """Write the form values back into the wrapped entry."""
         self._entry.key = self._key_edit.text().strip()
         self._entry.value = self._value_edit.text()
         self._entry.inline_comment = self._inline_edit.text().strip()
@@ -63,7 +75,14 @@ class EntryEditDialog(QDialog):
 
 
 class SectionEditDialog(QDialog):
+    """Modal dialog for editing one :class:`~ini_parser.IniSection`.
+
+    Call :meth:`apply_to_section` after :meth:`exec` returns ``Accepted`` to
+    write the form values back into the section.
+    """
+
     def __init__(self, section: IniSection, language: Language, parent: Optional[QWidget] = None) -> None:
+        """Pre-fill the form with the values from ``section``."""
         super().__init__(parent)
         self._language = language
         self.setWindowTitle(translate(language, "section_edit_title"))
@@ -92,6 +111,7 @@ class SectionEditDialog(QDialog):
         layout.addWidget(buttons)
 
     def apply_to_section(self) -> None:
+        """Write the form values back into the wrapped section."""
         self._section.name = self._name_edit.text().strip()
         raw_pre = self._pre_edit.toPlainText()
         self._section.preceding_comments = raw_pre.splitlines() if raw_pre.strip() else []
@@ -100,12 +120,22 @@ class SectionEditDialog(QDialog):
 
 
 class DiffSelectDialog(QDialog):
+    """Lets the user pick two open documents for side-by-side comparison."""
+
     def __init__(
         self,
         tabs: list[tuple[str, "DocumentTab"]],
         language: Language,
         parent: Optional[QWidget] = None,
     ) -> None:
+        """Populate two combo boxes with the given tabs.
+
+        Args:
+            tabs: Pairs of ``(display_label, DocumentTab)``. At least two
+                entries are expected; the second is pre-selected as B.
+            language: Initial UI language.
+            parent: Optional Qt parent.
+        """
         super().__init__(parent)
         self.setWindowTitle(translate(language, "diff_select_title"))
         self.setMinimumWidth(380)
@@ -133,4 +163,5 @@ class DiffSelectDialog(QDialog):
         layout.addWidget(buttons)
 
     def selected_tabs(self) -> tuple["DocumentTab", "DocumentTab"]:
+        """Return the currently selected ``(tab_a, tab_b)`` pair."""
         return self._combo_a.currentData(), self._combo_b.currentData()

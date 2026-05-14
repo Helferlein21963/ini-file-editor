@@ -1,5 +1,8 @@
-"""
-highlighter.py – Qt syntax highlighter for the raw INI text preview.
+"""Syntax highlighter for the INI preview pane.
+
+Colours comments, section headers, keys, and values inline using a fixed
+VS-Code-inspired palette. Designed to be cheap: classification is single-pass
+per line with no regex.
 """
 from __future__ import annotations
 
@@ -7,7 +10,14 @@ from PyQt6.QtGui import QColor, QFont, QSyntaxHighlighter, QTextCharFormat
 
 
 class IniHighlighter(QSyntaxHighlighter):
+    """Qt syntax highlighter for INI text.
+
+    Attach to a :class:`QTextDocument` once; Qt invokes
+    :meth:`highlightBlock` for each visible line.
+    """
+
     def highlightBlock(self, text: str) -> None:  # type: ignore[override]
+        """Classify and colour a single line of text."""
         stripped = text.strip()
 
         comment_fmt = QTextCharFormat()

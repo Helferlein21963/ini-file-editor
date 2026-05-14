@@ -78,3 +78,93 @@ stages:
           #     publishLocation: 'Container'
           #   displayName: 'Publish build files'
           #   condition: succeeded()
+
+  - stage: Docs
+    displayName: 'Build documentation'
+    dependsOn: []   # run in parallel with Build
+    jobs:
+      - job: SphinxDocs
+        displayName: 'Sphinx HTML + Markdown'
+        steps:
+          - checkout: self
+            persistCredentials: true   # required for the wiki git push step
+
+          - task: UsePythonVersion@0
+            inputs:
+              versionSpec: '$(pythonVersion)'
+            displayName: 'Use Python $(pythonVersion)'
+
+          - task: Cache@2
+            inputs:
+              key: 'pip | "$(Agent.OS)" | requirements-dev.txt'
+              restoreKeys: |
+                pip | "$(Agent.OS)"
+              path: $(PIP_CACHE_DIR)
+            displayName: 'Cache pip packages'
+
+          - script: |
+              python -m pip install --upgrade pip
+              pip install -r requirements-dev.txt
+            displayName: 'Install dev dependencies (Sphinx + theme + builders)'
+
+          - script: |
+              sphinx-build -b html docs docs/_build/html
+            displayName: 'Build HTML documentation'
+
+          - script: |
+              sphinx-build -b markdown docs docs/_build/markdown
+            displayName: 'Build Markdown documentation (for Wiki)'
+
+          - task: PublishBuildArtifacts@1
+            inputs:
+              pathToPublish: '$(Build.SourcesDirectory)/docs/_build/html'
+              artifactName: 'docs-html'
+              publishLocation: 'Container'
+            displayName: 'Publish HTML docs as pipeline artifact'
+            condition: succeeded()
+
+          # ----------------------------------------------------------------
+          # Publish Markdown to the project's Azure DevOps Wiki.
+          #
+          # Requirements (one-time setup):
+          #   1. Create a Project Wiki in Azure DevOps (Wiki menu →
+          #      "Create project wiki"). This produces a hidden git repo at
+          #      https://dev.azure.com/<org>/<project>/_git/<project>.wiki
+          #   2. Grant the build identity "Contribute" rights on that wiki
+          #      repo (Project Settings → Repositories → <project>.wiki →
+          #      Security → "<Project Name> Build Service" → Contribute = Allow).
+          #
+          # The step is wrapped in `continueOnError: true` so wiki publishing
+          # never breaks the build — the HTML artifact is always produced.
+          # ----------------------------------------------------------------
+          - pwsh: |
+              $org      = "$(System.CollectionUri)".TrimEnd('/').Split('/')[-1]
+              $project  = "$(System.TeamProject)"
+              $wikiRepo = "https://$(System.AccessToken)@dev.azure.com/$org/$project/_git/$project.wiki"
+
+              git config --global user.email "azuredevops@local"
+              git config --global user.name  "Azure Pipelines"
+
+              $clone = Join-Path $env:AGENT_TEMPDIRECTORY "wiki"
+              if (Test-Path $clone) { Remove-Item $clone -Recurse -Force }
+              git clone $wikiRepo $clone
+
+              $target = Join-Path $clone "API"
+              if (Test-Path $target) { Remove-Item $target -Recurse -Force }
+              New-Item -ItemType Directory -Path $target | Out-Null
+              Copy-Item "$(Build.SourcesDirectory)/docs/_build/markdown/*" $target -Recurse
+
+              Push-Location $clone
+              git add -A
+              if (git status --porcelain) {
+                git commit -m "Update API docs from build $(Build.BuildNumber)"
+                git push origin HEAD:wikiMaster
+              } else {
+                Write-Host "No documentation changes to publish."
+              }
+              Pop-Location
+            displayName: 'Publish Markdown docs to Azure DevOps Wiki'
+            condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+            continueOnError: true
+            env:
+              SYSTEM_ACCESSTOKEN: $(System.AccessToken)

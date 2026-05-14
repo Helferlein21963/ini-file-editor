@@ -38,6 +38,11 @@ mypy src/
 
 # Build standalone EXE
 python -m pyinstaller ini-file-editor.spec
+
+# Build API documentation (Sphinx + Furo theme, Google-style docstrings)
+sphinx-build -b html docs docs/_build/html        # one-shot HTML build
+sphinx-build -b markdown docs docs/_build/markdown # Markdown for Azure DevOps Wiki
+sphinx-autobuild docs docs/_build/html             # live-reload server on :8000
 ```
 
 ## Architecture
@@ -82,12 +87,24 @@ Round-trip guarantee: parse → serialize → re-parse produces an identical doc
 
 Data flow: User edit → dialog → `IniDocument` mutated → `refresh_tree()` → preview refreshed → save/export.
 
+### 4. Documentation (`docs/`)
+
+Sphinx-based API documentation generated from Google-style docstrings.
+
+- **`docs/conf.py`** — Furo theme, `napoleon` (Google-style), `autodoc`, `autosummary`, `sphinx-autodoc-typehints`. `autodoc_mock_imports` covers `PyQt6`, `yaml`, `lxml`, `PIL` so the build runs on machines without those installed. `napoleon_use_ivar = True` and `napoleon_custom_sections = [("Signals", "params_style")]` are set to keep the build warning-clean.
+- **`docs/index.rst`** — entry page with toctree to `api/*.rst` and `architecture.rst`
+- **`docs/api/`** — one `.rst` per module: `ini_parser`, `ini_diff`, `translations`, `gui` (aggregates all PyQt6 modules)
+- **`docs/Makefile` / `docs/make.bat`** — targets `html`, `markdown`, `clean`
+
+Build is wired into [azure-pipelines.yml](azure-pipelines.yml) as a `Docs` stage that runs in parallel with `Build`: publishes HTML as the `docs-html` pipeline artifact and pushes Markdown to the project's Azure DevOps Wiki (`wikiMaster` branch, `API/` folder). Wiki push is `continueOnError: true` so missing wiki setup never breaks CI.
+
 ## Key Patterns
 
 - **`sorted_copy()` / `clone()`** — sorting and transformations always return new instances; never mutate in place
 - **Pending comments** — comments accumulate in a list and are assigned to the next section or entry encountered; this is the core of comment preservation
 - **`SortMode` / `ExportFormat` enums** — used throughout; avoid raw string comparisons
 - **`main.py` sys.path manipulation** — supports running from repo root, src dir, and PyInstaller bundles; do not remove
+- **Google-style docstrings** — all new public classes / methods get them so Sphinx `autodoc` + `napoleon` picks them up. Use `Signals:` (custom section, configured in `conf.py`) to document PyQt signals on widgets.
 
 ## Adding a New Export Format
 

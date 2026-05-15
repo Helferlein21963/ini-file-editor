@@ -46,6 +46,8 @@ class IniTreeWidget(QTreeWidget):
 
     document_changed = pyqtSignal()
     about_to_change = pyqtSignal()
+    # Emitted whenever the selected row kind changes: "none", "section", or "entry".
+    selection_kind_changed = pyqtSignal(str)
 
     # Win32 duplicate-role markers shown in the trailing role column.
     _ROLE_SYMBOL_WINNER   = "★"
@@ -71,6 +73,7 @@ class IniTreeWidget(QTreeWidget):
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.customContextMenuRequested.connect(self._context_menu)
         self.itemDoubleClicked.connect(self._on_double_click)
+        self.itemSelectionChanged.connect(self._emit_selection_kind)
         self._doc: Optional[IniDocument] = None
         self._sort_mode = SortMode.NONE
 
@@ -272,6 +275,71 @@ class IniTreeWidget(QTreeWidget):
             self._edit_section(item, obj)
         elif isinstance(obj, IniEntry):
             self._edit_entry(item, obj)
+
+    def current_selection_kind(self) -> str:
+        """Return ``"section"``, ``"entry"``, or ``"none"`` for the current row."""
+        item = self.currentItem()
+        if item is None or not item.isSelected():
+            return "none"
+        obj = item.data(0, Qt.ItemDataRole.UserRole)
+        if isinstance(obj, IniSection):
+            return "section"
+        if isinstance(obj, IniEntry):
+            return "entry"
+        return "none"
+
+    def _emit_selection_kind(self) -> None:
+        self.selection_kind_changed.emit(self.current_selection_kind())
+
+    def edit_current_section(self) -> None:
+        """Open the section-edit dialog for the currently selected row.
+
+        If a section is selected, edit it directly. If an entry is selected,
+        edit its parent section instead.
+        """
+        item = self.currentItem()
+        if item is None:
+            return
+        obj = item.data(0, Qt.ItemDataRole.UserRole)
+        if isinstance(obj, IniSection):
+            self._edit_section(item, obj)
+            return
+        if isinstance(obj, IniEntry):
+            parent = item.parent()
+            if parent is None:
+                return
+            sec = parent.data(0, Qt.ItemDataRole.UserRole)
+            if isinstance(sec, IniSection):
+                self._edit_section(parent, sec)
+
+    def edit_current_entry(self) -> None:
+        """Open the entry-edit dialog for the currently selected entry."""
+        item = self.currentItem()
+        if item is None:
+            return
+        obj = item.data(0, Qt.ItemDataRole.UserRole)
+        if isinstance(obj, IniEntry):
+            self._edit_entry(item, obj)
+
+    def add_entry_at_current(self) -> None:
+        """Add a new entry to the section of the currently selected row.
+
+        If a section is selected the entry is appended to it; if an entry is
+        selected the new entry is appended to its parent section.
+        """
+        item = self.currentItem()
+        if item is None:
+            return
+        obj = item.data(0, Qt.ItemDataRole.UserRole)
+        if isinstance(obj, IniSection):
+            self._add_entry(item, obj)
+        elif isinstance(obj, IniEntry):
+            parent = item.parent()
+            if parent is None:
+                return
+            sec = parent.data(0, Qt.ItemDataRole.UserRole)
+            if isinstance(sec, IniSection):
+                self._add_entry(parent, sec)
 
     def _context_menu(self, pos) -> None:
         item = self.itemAt(pos)

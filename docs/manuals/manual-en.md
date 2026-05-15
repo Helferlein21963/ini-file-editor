@@ -40,7 +40,9 @@ On startup, the main window opens with an empty, untitled document.
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │  Menu bar:  File │ Edit │ View │ Help                           │
-│  Toolbar:  📁 Open  💾 Save  ⤵ Export  ➕ Add section          │
+│  Toolbar:  📁 Open  💾 Save  🔀 Compare  ⤵ Export              │
+│            ➕ Add section  ✏️ Edit section  ➕ Add key          │
+│            ✏️ Edit entry                                        │
 ├──────────────┬──────────────────────┬───────────────────────────┤
 │  🔀 Sorting  │  📋 Export format   │  🌍 Language              │
 │              │  INI ▼  ⤵ Export   │  English ▼                │
@@ -133,7 +135,7 @@ The narrow trailing column without a header label shows the duplicate role: **�
 - **Double-click a section** → Opens the section dialog.
 - **Double-click an entry** → Opens the entry dialog.
 
-### Editing via context menu
+### Editing via context menu, menu, or toolbar
 
 Right-clicking a section or entry opens a menu with:
 
@@ -145,6 +147,18 @@ Right-clicking a section or entry opens a menu with:
 | ✏️ Edit entry | Change the key, value, and comments |
 | 🗑️ Delete section | Remove the section and all its entries |
 | 🗑️ Delete entry | Remove a single key |
+
+The four editing actions (Add section / Edit section / Add key / Edit entry) are also available from the **Edit** menu and the toolbar. They are **context-aware** and rendered dimmed when they don't apply to the current selection:
+
+| Selection | ➕ Add section | ✏️ Edit section | ➕ Add key | ✏️ Edit entry |
+|---|:---:|:---:|:---:|:---:|
+| nothing selected | enabled | off | off | off |
+| section | enabled | enabled | enabled | off |
+| entry | enabled | enabled¹ | enabled² | enabled |
+| compare tab active | off | off | off | off |
+
+¹ With an entry selected, **✏️ Edit section** edits the parent section.  
+² A new key is inserted into the parent section of the selected entry.
 
 ### Entry dialog
 
@@ -322,11 +336,11 @@ The diff tab updates automatically whenever one of the source files is edited.
 
 The merge function combines multiple INI files into a single document.
 
-1. Menu **File → 🔁 Merge multiple files**.
+1. Menu **Edit → 🔁 Merge multiple files**.
 2. Select one or more INI files (multiple selection supported).
 3. All sections and entries are merged into the active document.
 
-> **First-wins on merge**: Existing keys in the target document stay unchanged — the merge function only adds missing entries. This matches the Win32 convention (see [Section 15](#15-handling-duplicates-win32-convention)) and ensures that, when merging several configuration snapshots, the first one loaded remains authoritative.
+> **First-wins on merge**: Existing keys in the target document stay unchanged — the merge function only adds missing entries. This matches the Win32 convention (see [Section 15](#15-handling-duplicates-win32-convention)) and ensures that, when merging several configuration snapshots, the first one loaded remains authoritative. When several files are merged into an empty tab, the first file loaded wins — `QFileDialog` typically returns multi-selections in alphabetical order, so the alphabetically earliest file usually becomes authoritative.
 
 ---
 

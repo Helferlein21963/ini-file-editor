@@ -88,7 +88,7 @@ Round-trip guarantee: parse → serialize → re-parse produces an identical doc
 
 ### 3. GUI Layer (`src/main_window.py`)
 
-- **`MainWindow`** — menu bar, toolbar, status bar, multi-tab file management with unsaved-changes guard
+- **`MainWindow`** — menu bar, toolbar, status bar, multi-tab file management with unsaved-changes guard. Selection-aware editing actions (Add/Edit section, Add key, Edit entry) live both in the **Edit** menu and the toolbar; they listen to `IniTreeWidget.selection_kind_changed` (emits `"none"` / `"section"` / `"entry"`) and to file-tab changes (broadcasting `"no_doc"` for DiffTab or no tab). The same channel also gates Save / Save as / Export, which are disabled when the active tab is not a `DocumentTab`. Merge multiple files lives under the **Edit** menu (next to Compare files). Disabled state is styled via `QToolButton:disabled` and `QMenu::item:disabled` in `DARK_STYLESHEET`.
 - **`DocumentTab`** (`QSplitter`) — one instance per open file; owns the `IniTreeWidget`, preview `QPlainTextEdit`, header editor, and its own undo/redo stacks (`list[IniDocument]`). Undo is snapshot-based via `clone()`, not `QUndoStack`.
 - **`IniTreeWidget`** — hierarchical tree: sections → entries, with Catppuccin-inspired dark theme
 - **`IniHighlighter`** (`QSyntaxHighlighter`) — colors comments, section headers, keys, and values in the preview panel

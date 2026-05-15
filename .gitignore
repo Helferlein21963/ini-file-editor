@@ -60,3 +60,6 @@ example.ini
 # Temp files
 *.tmp
 *.temp
+
+# Doc files
+*.pdf

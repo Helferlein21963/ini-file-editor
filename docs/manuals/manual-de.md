@@ -40,7 +40,9 @@ Beim Start öffnet sich das Hauptfenster mit einem leeren, unbenannten Dokument.
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │  Menüleiste:  Datei │ Bearbeiten │ Ansicht │ Hilfe              │
-│  Werkzeugleiste:  📁 Öffnen  💾 Speichern  ⤵ Exportieren  ➕   │
+│  Werkzeugleiste:  📁 Öffnen  💾 Speichern  🔀 Vergleichen       │
+│                   ⤵ Exportieren  ➕ Abschnitt  ✏️ Abschnitt    │
+│                   ➕ Schlüssel  ✏️ Eintrag                      │
 ├──────────────┬──────────────────────┬───────────────────────────┤
 │  🔀 Sortie-  │  📋 Export-Format   │  🌍 Sprache               │
 │  rung        │  INI ▼  ⤵ Export   │  Deutsch ▼                │
@@ -133,7 +135,7 @@ Die schmale letzte Spalte ohne Header zeigt die Duplikat-Rolle: **★** für das
 - **Doppelklick auf einen Abschnitt** → Öffnet den Abschnitts-Dialog.
 - **Doppelklick auf einen Eintrag** → Öffnet den Eintrags-Dialog.
 
-### Bearbeiten per Kontextmenü
+### Bearbeiten per Kontextmenü, Menü oder Werkzeugleiste
 
 Rechtsklick auf einen Abschnitt oder Eintrag öffnet ein Menü mit:
 
@@ -145,6 +147,18 @@ Rechtsklick auf einen Abschnitt oder Eintrag öffnet ein Menü mit:
 | ✏️ Eintrag bearbeiten | Schlüssel, Wert und Kommentare ändern |
 | 🗑️ Abschnitt löschen | Abschnitt mit allen Einträgen entfernen |
 | 🗑️ Eintrag löschen | Einzelnen Schlüssel entfernen |
+
+Die vier Bearbeiten-Aktionen (Abschnitt hinzufügen / Abschnitt bearbeiten / Schlüssel hinzufügen / Eintrag bearbeiten) sind zusätzlich im Menü **Bearbeiten** und in der Werkzeugleiste verfügbar. Sie sind **kontextabhängig** und werden abgedimmt dargestellt, wenn sie auf die aktuelle Auswahl nicht angewendet werden können:
+
+| Auswahl | ➕ Abschnitt | ✏️ Abschnitt | ➕ Schlüssel | ✏️ Eintrag |
+|---|:---:|:---:|:---:|:---:|
+| nichts ausgewählt | aktiv | aus | aus | aus |
+| Abschnitt | aktiv | aktiv | aktiv | aus |
+| Eintrag | aktiv | aktiv¹ | aktiv² | aktiv |
+| Compare-Tab aktiv | aus | aus | aus | aus |
+
+¹ Bei einem markierten Eintrag bearbeitet **✏️ Abschnitt bearbeiten** die übergeordnete Section.  
+² Der neue Schlüssel wird in die übergeordnete Section des markierten Eintrags eingefügt.
 
 ### Eintrags-Dialog
 
@@ -322,11 +336,11 @@ Der Diff-Tab aktualisiert sich automatisch, sobald eine der Quelldateien bearbei
 
 Mit der Merge-Funktion können mehrere INI-Dateien zu einem einzigen Dokument kombiniert werden.
 
-1. Menü **Datei → 🔁 Mehrere Dateien zusammenführen**.
+1. Menü **Bearbeiten → 🔁 Mehrere Dateien zusammenführen**.
 2. Eine oder mehrere INI-Dateien auswählen (Mehrfachauswahl möglich).
 3. Alle Abschnitte und Einträge werden in das aktive Dokument eingebunden.
 
-> **First-wins beim Merge**: Bereits vorhandene Schlüssel im Zieldokument bleiben unverändert — die Merge-Funktion fügt nur fehlende Einträge hinzu. Dieses Verhalten entspricht der Win32-Konvention (siehe [Kapitel 15](#15-umgang-mit-duplikaten-win32-konvention)) und sorgt dafür, dass beim Zusammenführen mehrerer Konfigurationsstände die zuerst geladene Variante die maßgebliche bleibt.
+> **First-wins beim Merge**: Bereits vorhandene Schlüssel im Zieldokument bleiben unverändert — die Merge-Funktion fügt nur fehlende Einträge hinzu. Dieses Verhalten entspricht der Win32-Konvention (siehe [Kapitel 15](#15-umgang-mit-duplikaten-win32-konvention)) und sorgt dafür, dass beim Zusammenführen mehrerer Konfigurationsstände die zuerst geladene Variante die maßgebliche bleibt. Werden mehrere Dateien in einen leeren Tab gemergt, gewinnt die zuerst geladene Datei — `QFileDialog` gibt Mehrfachauswahlen in der Regel alphabetisch sortiert zurück, sodass typischerweise die alphabetisch früheste Datei die maßgebliche bleibt.
 
 ---
 

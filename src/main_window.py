@@ -75,9 +75,11 @@ DARK_STYLESHEET = """
     QMenuBar::item:selected { background-color: #313244; }
     QMenu { background-color: #181825; border: 1px solid #45475a; }
     QMenu::item:selected { background-color: #313244; }
+    QMenu::item:disabled { color: #6c7086; }
     QToolBar { background-color: #181825; border-bottom: 1px solid #45475a; spacing: 4px; }
     QToolButton { padding: 4px 10px; border-radius: 4px; }
-    QToolButton:hover { background-color: #313244; }
+    QToolButton:hover:enabled { background-color: #313244; }
+    QToolButton:disabled { color: #6c7086; background-color: #1a1a2a; }
     QGroupBox { border: 1px solid #45475a; border-radius: 6px; margin-top: 8px; padding: 6px; }
     QGroupBox::title { subcontrol-origin: margin; left: 8px; }
     QLabel { background-color: transparent; color: #cdd6f4; }
@@ -219,6 +221,7 @@ class MainWindow(QMainWindow):
     def _new_tab(self, doc: Optional[IniDocument] = None) -> DocumentTab:
         tab = DocumentTab(self._language, self._current_sort, self._current_format)
         tab.content_changed.connect(lambda: self._on_tab_content_changed(tab))
+        tab.tree.selection_kind_changed.connect(self._update_selection_actions)
         tab.set_labels(
             self._t("tree_label"),
             self._t("preview_tab"),
@@ -296,6 +299,9 @@ class MainWindow(QMainWindow):
             self._format_combo.blockSignals(True)
             self._format_combo.setCurrentIndex(fmts.index(self._current_format))
             self._format_combo.blockSignals(False)
+            self._update_selection_actions(tab.tree.current_selection_kind())
+        else:
+            self._update_selection_actions("no_doc")
         self._update_window_title()
 
     def _update_translations(self) -> None:
@@ -332,6 +338,9 @@ class MainWindow(QMainWindow):
         self._act_undo.setText(self._t("action_undo"))
         self._act_redo.setText(self._t("action_redo"))
         self._act_add_section.setText(self._t("action_add_section"))
+        self._act_edit_section.setText(self._t("context_edit_section"))
+        self._act_add_entry.setText(self._t("context_add_entry"))
+        self._act_edit_entry.setText(self._t("context_edit_entry"))
         self._act_expand.setText(self._t("action_expand"))
         self._act_collapse.setText(self._t("action_collapse"))
         self._act_about.setText(self._t("action_about"))
@@ -342,8 +351,12 @@ class MainWindow(QMainWindow):
             self._toolbar.setWindowTitle(self._t("toolbar_name"))
             self._tb_open.setText(self._t("action_open"))
             self._tb_save.setText(self._t("action_save"))
+            self._tb_compare.setText(self._t("action_compare"))
             self._tb_export.setText(self._t("action_export"))
             self._tb_add_section.setText(self._t("action_add_section"))
+            self._tb_edit_section.setText(self._t("context_edit_section"))
+            self._tb_add_entry.setText(self._t("context_add_entry"))
+            self._tb_edit_entry.setText(self._t("context_edit_entry"))
         self._language_combo.blockSignals(True)
         self._language_combo.setItemText(0, "Deutsch")
         self._language_combo.setItemText(1, "English")
@@ -503,10 +516,6 @@ class MainWindow(QMainWindow):
         self._act_open_tab.triggered.connect(self._open_file_in_new_tab)
         self._file_menu.addAction(self._act_open_tab)
 
-        self._act_merge = QAction(self._t("action_merge"), self)
-        self._act_merge.triggered.connect(self._merge_files)
-        self._file_menu.addAction(self._act_merge)
-
         self._file_menu.addSeparator()
 
         self._act_close_tab = QAction(self._t("action_close_tab"), self)
@@ -557,6 +566,21 @@ class MainWindow(QMainWindow):
         self._act_add_section.triggered.connect(self._add_section_to_current_tab)
         self._edit_menu.addAction(self._act_add_section)
 
+        self._act_edit_section = QAction(self._t("context_edit_section"), self)
+        self._act_edit_section.triggered.connect(self._edit_current_section)
+        self._act_edit_section.setEnabled(False)
+        self._edit_menu.addAction(self._act_edit_section)
+
+        self._act_add_entry = QAction(self._t("context_add_entry"), self)
+        self._act_add_entry.triggered.connect(self._add_entry_at_current)
+        self._act_add_entry.setEnabled(False)
+        self._edit_menu.addAction(self._act_add_entry)
+
+        self._act_edit_entry = QAction(self._t("context_edit_entry"), self)
+        self._act_edit_entry.triggered.connect(self._edit_current_entry)
+        self._act_edit_entry.setEnabled(False)
+        self._edit_menu.addAction(self._act_edit_entry)
+
         self._edit_menu.addSeparator()
 
         self._act_find = QAction(self._t("action_find"), self)
@@ -574,6 +598,10 @@ class MainWindow(QMainWindow):
         self._act_compare = QAction(self._t("action_compare"), self)
         self._act_compare.triggered.connect(self._open_diff_tab)
         self._edit_menu.addAction(self._act_compare)
+
+        self._act_merge = QAction(self._t("action_merge"), self)
+        self._act_merge.triggered.connect(self._merge_files)
+        self._edit_menu.addAction(self._act_merge)
 
         self._view_menu = bar.addMenu(self._t("menu_view"))
         self._act_expand = QAction(self._t("action_expand"), self)
@@ -595,11 +623,25 @@ class MainWindow(QMainWindow):
         self._tb_open = self._toolbar.addAction(self._t("action_open"), self._open_file)
         self._tb_save = self._toolbar.addAction(self._t("action_save"), self._save_file)
         self._toolbar.addSeparator()
+        self._tb_compare = self._toolbar.addAction(self._t("action_compare"), self._open_diff_tab)
+        self._toolbar.addSeparator()
         self._tb_export = self._toolbar.addAction(self._t("action_export"), self._export_file)
         self._toolbar.addSeparator()
         self._tb_add_section = self._toolbar.addAction(
             self._t("action_add_section"), self._add_section_to_current_tab
         )
+        self._tb_edit_section = self._toolbar.addAction(
+            self._t("context_edit_section"), self._edit_current_section
+        )
+        self._tb_edit_section.setEnabled(False)
+        self._tb_add_entry = self._toolbar.addAction(
+            self._t("context_add_entry"), self._add_entry_at_current
+        )
+        self._tb_add_entry.setEnabled(False)
+        self._tb_edit_entry = self._toolbar.addAction(
+            self._t("context_edit_entry"), self._edit_current_entry
+        )
+        self._tb_edit_entry.setEnabled(False)
 
     def _apply_dark_theme(self) -> None:
         self.setStyleSheet(DARK_STYLESHEET)
@@ -914,6 +956,47 @@ class MainWindow(QMainWindow):
         tab = self._current_tab()
         if tab is not None:
             tab.tree._add_section()
+
+    def _edit_current_section(self) -> None:
+        tab = self._current_tab()
+        if tab is not None:
+            tab.tree.edit_current_section()
+
+    def _add_entry_at_current(self) -> None:
+        tab = self._current_tab()
+        if tab is not None:
+            tab.tree.add_entry_at_current()
+
+    def _edit_current_entry(self) -> None:
+        tab = self._current_tab()
+        if tab is not None:
+            tab.tree.edit_current_entry()
+
+    def _update_selection_actions(self, kind: str) -> None:
+        # Kinds: "no_doc" (DiffTab or no tab → all editing actions off),
+        # "none" (DocumentTab without selection → only add_section on),
+        # "section" / "entry" (selection-dependent actions on).
+        # _build_ui() creates the initial tab (which fires currentChanged →
+        # this slot) before _build_menu() / _build_toolbar() exist, so guard.
+        if not hasattr(self, "_act_edit_section"):
+            return
+        has_doc = kind != "no_doc"
+        # Edit section works on either the selected section or the parent
+        # section of the selected entry.
+        self._act_save.setEnabled(has_doc)
+        self._act_save_as.setEnabled(has_doc)
+        self._act_export.setEnabled(has_doc)
+        self._act_add_section.setEnabled(has_doc)
+        self._act_edit_section.setEnabled(kind in ("section", "entry"))
+        self._act_add_entry.setEnabled(kind in ("section", "entry"))
+        self._act_edit_entry.setEnabled(kind == "entry")
+        if hasattr(self, "_tb_edit_section"):
+            self._tb_save.setEnabled(has_doc)
+            self._tb_export.setEnabled(has_doc)
+            self._tb_add_section.setEnabled(has_doc)
+            self._tb_edit_section.setEnabled(kind in ("section", "entry"))
+            self._tb_add_entry.setEnabled(kind in ("section", "entry"))
+            self._tb_edit_entry.setEnabled(kind == "entry")
 
     def _expand_all(self) -> None:
         tab = self._current_tab()

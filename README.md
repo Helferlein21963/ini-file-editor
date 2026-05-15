@@ -52,6 +52,7 @@ Ein kommentarerhaltender INI-Datei-Editor mit **PyQt6-GUI**, flexibler Sortierun
 |---|---|
 | **Strukturübersicht** | Hierarchischer Tree-View: Abschnitt → Schlüssel/Wert/Kommentar |
 | **Inline-Editing** | Doppelklick oder Kontextmenü öffnet Bearbeitungs-Dialoge |
+| **Selection-aware Bearbeiten-Aktionen** | Abschnitt/Schlüssel hinzufügen, bearbeiten und löschen sind zusätzlich im Menü **Bearbeiten** und in der Werkzeugleiste verfügbar; sie werden abgedimmt, wenn sie auf die aktuelle Auswahl bzw. den aktiven Tab (z. B. Compare-Tab) nicht anwendbar sind |
 | **Kommentar-Editing** | Vorangestellte und Inline-Kommentare editierbar |
 | **Sortierung live** | Dropdown ändert die Darstellung sofort, Export folgt der Sortierung |
 | **Format-Vorschau** | Rechtes Panel zeigt Live-Preview im gewählten Export-Format |

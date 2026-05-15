@@ -18,7 +18,9 @@ import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from enum import Enum, auto
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
+
+ProgressCallback = Callable[[int, int], None]
 
 try:
     import yaml
@@ -423,7 +425,10 @@ class IniParser:
     """
 
     @staticmethod
-    def parse_file(path: str | Path) -> IniDocument:
+    def parse_file(
+        path: str | Path,
+        progress_callback: Optional[ProgressCallback] = None,
+    ) -> IniDocument:
         """Read and parse an INI file from disk.
 
         Encoding is auto-detected: the parser tries UTF-8 (with and without
@@ -432,6 +437,10 @@ class IniParser:
 
         Args:
             path: File-system path to read.
+            progress_callback: Optional callable invoked as
+                ``progress_callback(current_line, total_lines)`` roughly
+                ~100 times during parsing. Useful for driving a progress
+                bar from the GUI.
 
         Returns:
             A populated :class:`IniDocument` whose
@@ -447,12 +456,15 @@ class IniParser:
                 continue
         else:
             text = raw.decode("latin-1")  # latin-1 never fails
-        doc = IniParser.parse_string(text)
+        doc = IniParser.parse_string(text, progress_callback=progress_callback)
         doc.source_path = path
         return doc
 
     @staticmethod
-    def parse_string(text: str) -> IniDocument:
+    def parse_string(
+        text: str,
+        progress_callback: Optional[ProgressCallback] = None,
+    ) -> IniDocument:
         """Parse INI text into an :class:`IniDocument`.
 
         Comments accumulate in a pending buffer and are attached to the next
@@ -478,12 +490,19 @@ class IniParser:
         """
         doc = IniDocument()
         lines = text.splitlines()
+        total_lines = len(lines)
+        progress_step = max(1, total_lines // 100)
 
         pending_comments: list[str] = []
         current_section: Optional[IniSection] = None
         seen_section_names: set[str] = set()
 
+        if progress_callback is not None:
+            progress_callback(0, total_lines)
+
         for line_idx, raw in enumerate(lines):
+            if progress_callback is not None and line_idx % progress_step == 0:
+                progress_callback(line_idx, total_lines)
             line = raw.rstrip()
             line_no = line_idx + 1
 
@@ -562,5 +581,8 @@ class IniParser:
         # If no sections found, put all in header
         if not doc.sections and pending_comments:
             doc.header_comments = pending_comments
+
+        if progress_callback is not None:
+            progress_callback(total_lines, total_lines)
 
         return doc

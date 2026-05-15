@@ -18,7 +18,7 @@ from PyQt6.QtGui import (
 from PyQt6.QtWidgets import (
     QApplication, QComboBox, QDialog, QFileDialog, QGroupBox, QHBoxLayout,
     QLabel, QSizePolicy, QMainWindow, QMessageBox, QPlainTextEdit,
-    QPushButton, QTabWidget, QToolBar, QVBoxLayout, QWidget,
+    QProgressBar, QPushButton, QTabWidget, QToolBar, QVBoxLayout, QWidget,
 )
 
 try:
@@ -123,6 +123,14 @@ DARK_STYLESHEET = """
     QTabBar::close-button { subcontrol-position: right; }
     QTabBar::close-button:hover { background-color: #f38ba8; border-radius: 2px; }
     QStatusBar { background-color: #181825; border-top: 1px solid #45475a; }
+    QStatusBar::item { border: none; }
+    QProgressBar {
+        background-color: #313244; color: #cdd6f4;
+        border: 1px solid #45475a; border-radius: 4px;
+        text-align: center; min-width: 180px; max-width: 220px;
+        max-height: 14px;
+    }
+    QProgressBar::chunk { background-color: #89b4fa; border-radius: 3px; }
     QFrame { border: none; }
     QLineEdit {
         background-color: #313244; color: #cdd6f4;
@@ -191,6 +199,13 @@ class MainWindow(QMainWindow):
 
         self._update_translations()
         self.resize(1200, 750)
+        self._progress = QProgressBar(self)
+        self._progress.setMaximum(100)
+        self._progress.setMaximumWidth(220)
+        self._progress.setFixedHeight(14)
+        self._progress.setTextVisible(True)
+        self._progress.hide()
+        self.statusBar().addPermanentWidget(self._progress)
         self.statusBar().showMessage(self._t("status_ready"))
         self.setAcceptDrops(True)
 
@@ -613,15 +628,59 @@ class MainWindow(QMainWindow):
         self._update_window_title()
         self.statusBar().showMessage(self._t("status_new_document"))
 
-    def _load_file_into_tab(self, path: str, tab: DocumentTab) -> bool:
+    def _load_file_into_tab(
+        self,
+        path: str,
+        tab: DocumentTab,
+        progress_range: Optional[tuple[int, int]] = None,
+    ) -> bool:
+        # When called as part of a multi-file batch the caller passes a
+        # progress sub-range; in single-file mode we own the whole bar.
+        owns_bar = progress_range is None
+        start, end = progress_range if progress_range else (0, 100)
+
+        def report(local_pct: int) -> None:
+            self._set_progress(start + local_pct * (end - start) // 100)
+
+        # Parse phase covers the local range 5..85; the parser callback maps
+        # its (current, total) into that sub-range so progress is smooth.
+        def parse_cb(current: int, total: int) -> None:
+            frac = current / total if total > 0 else 1.0
+            report(5 + int(frac * 80))
+
         try:
-            doc = IniParser.parse_file(path)
+            if owns_bar:
+                self._show_progress(0)
+            report(5)
+            doc = IniParser.parse_file(path, progress_callback=parse_cb)
+            report(85)
             tab.load_document(doc)
+            report(98)
             self._warn_about_duplicates(doc, path)
+            report(100)
+            if owns_bar:
+                self._hide_progress()
             return True
         except Exception as exc:
+            if owns_bar:
+                self._hide_progress()
             QMessageBox.critical(self, self._t("error_export"), self._t("error_open", exc=str(exc)))
             return False
+
+    def _show_progress(self, value: int = 0) -> None:
+        if not self._progress.isVisible():
+            self._progress.setMaximum(100)
+            self._progress.show()
+        self._set_progress(value)
+
+    def _set_progress(self, value: int) -> None:
+        clamped = max(0, min(self._progress.maximum(), value))
+        self._progress.setValue(clamped)
+        QApplication.processEvents()
+
+    def _hide_progress(self) -> None:
+        self._progress.hide()
+        self._progress.setValue(0)
 
     def _warn_about_duplicates(self, doc: IniDocument, path: str) -> None:
         if not doc.duplicates:
@@ -641,18 +700,22 @@ class MainWindow(QMainWindow):
             paths: One or more file paths to open.
         """
         loaded = 0
+        n = len(paths)
+        self._show_progress(0)
         for i, path in enumerate(paths):
             path = str(path)
+            sub_range = (i * 100 // n, (i + 1) * 100 // n)
             tab = self._current_tab()
             if i == 0 and self._is_pristine_tab(tab):
-                if self._load_file_into_tab(path, tab):
+                if self._load_file_into_tab(path, tab, progress_range=sub_range):
                     self._set_tab_title(self._file_tabs.currentIndex(), tab)
                     loaded += 1
             else:
                 tab = self._new_tab()
-                if self._load_file_into_tab(path, tab):
+                if self._load_file_into_tab(path, tab, progress_range=sub_range):
                     self._set_tab_title(self._file_tabs.currentIndex(), tab)
                     loaded += 1
+        self._hide_progress()
         if loaded == 0:
             return
         self._update_window_title()
@@ -698,14 +761,31 @@ class MainWindow(QMainWindow):
             tab.load_document(IniDocument())
 
         merged = 0
-        for path in paths:
+        n = len(paths)
+        self._show_progress(0)
+        for i, path in enumerate(paths):
+            file_start = i * 100 // n
+            file_end = (i + 1) * 100 // n
+            # Reserve the last ~10% of this file's slice for the merge step.
+            parse_span = max(0, (file_end - file_start) - max(1, (file_end - file_start) // 10))
+
+            def make_cb(start: int, span: int):
+                def cb(current: int, total: int) -> None:
+                    frac = current / total if total > 0 else 1.0
+                    self._set_progress(start + int(frac * span))
+                return cb
+
             try:
-                doc = IniParser.parse_file(path)
+                self._set_progress(file_start)
+                doc = IniParser.parse_file(path, progress_callback=make_cb(file_start, parse_span))
+                self._set_progress(file_start + parse_span)
                 tab.doc.merge_from(doc)
                 self._warn_about_duplicates(doc, path)
+                self._set_progress(file_end)
                 merged += 1
             except Exception as exc:
                 QMessageBox.warning(self, self._t("merge_error"), f"{path}: {exc}")
+        self._hide_progress()
 
         if merged == 0:
             return

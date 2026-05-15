@@ -37,12 +37,14 @@ Ein kommentarerhaltender INI-Datei-Editor mit **PyQt6-GUI**, flexibler Sortierun
 | **Abschnitts-Kommentare** | Kommentare vor/nach `[section]`-Headern werden getrennt gespeichert |
 | **Globale Kopfkommentare** | Datei-Header-Kommentare vor dem ersten Abschnitt werden dediziert behandelt |
 | **Sortierung** | Keine / Abschnitte alphabetisch / Schlüssel alphabetisch / beides |
-| **Export: INI** | Formatierte, einheitliche INI-Ausgabe inkl. aller Kommentare |
+| **Win32-konformes Duplikat-Handling** | Doppelte Sections und Keys bleiben verbatim erhalten; Lookups (`get_section`/`get_entry`) liefern den ersten Treffer — analog zu `GetPrivateProfileString`. Beim Parsen werden Duplikate in `IniDocument.duplicates` aufgezeichnet, sodass die GUI sie visuell hervorheben kann |
+| **Export: INI** | Formatierte, einheitliche INI-Ausgabe inkl. aller Kommentare und aller Duplikate |
 | **Export: JSON** | Kompaktes JSON als `{ "section": { "key": "value" } }` |
 | **Export: XML** | Valides XML mit `<configuration><section><entry>` Struktur |
 | **Export: YAML** | Lesbares YAML (benötigt PyYAML) |
-| **Round-Trip** | Parse → Serialize → Re-Parse ergibt identische Datenstruktur |
+| **Round-Trip** | Parse → Serialize → Re-Parse ergibt identische Datenstruktur (inkl. Duplikate) |
 | **Meta-INI / Merge** | Mehrere INI-Dateien zu einem Dokument zusammenführen und exportieren |
+| **Progress-Callback** | `IniParser.parse_file(..., progress_callback=...)` für UI-Fortschrittsanzeigen bei großen Dateien |
 
 ### GUI-Schicht (`main_window.py` + Submodule)
 
@@ -54,6 +56,9 @@ Ein kommentarerhaltender INI-Datei-Editor mit **PyQt6-GUI**, flexibler Sortierun
 | **Sortierung live** | Dropdown ändert die Darstellung sofort, Export folgt der Sortierung |
 | **Format-Vorschau** | Rechtes Panel zeigt Live-Preview im gewählten Export-Format |
 | **Syntax-Highlighting** | Schlüssel, Werte, Kommentare und Abschnittsnamen farblich hervorgehoben |
+| **Duplikat-Highlighting** | Erstes Vorkommen (★ Winner, fett) und geschattete Duplikate (↓, kursiv) werden in Strukturübersicht und Vorschau farblich markiert. Statusleisten-Meldung beim Öffnen, wenn Duplikate erkannt wurden |
+| **Datei-Vergleich (Diff)** | Side-by-Side-Vergleich zweier INI-Dokumente; Duplikat-Rolle in eigener Spalte „Duplikat (Win32-Aufruf)" mit Symbol + Font (★ fett / ↓ kursiv) |
+| **Lade-Fortschritt** | Fortschrittsbalken rechts in der Statusleiste während Parse + UI-Aufbau, granular über Parser-Callback |
 | **Dark Theme** | Modernes dunkles Erscheinungsbild (Catppuccin-inspiriert) |
 | **Unsaved-Changes-Guard** | Warnung beim Schließen mit ungespeicherten Änderungen |
 | **Plattformübergreifend** | Windows, macOS, Linux |
@@ -222,6 +227,18 @@ section.set_entry("timeout", "60")
 # Speichern
 from pathlib import Path
 Path("output.ini").write_text(doc.to_ini_string(), encoding="utf-8")
+
+# Duplikate inspizieren (Win32 GetPrivateProfileString sieht jeweils nur das
+# erste Vorkommen; alle weiteren landen hier)
+for dup in doc.duplicates:
+    print(f"Zeile {dup.line}: {dup.kind.value} '{dup.section}' / {dup.key}")
+
+# Mit Fortschritts-Callback laden (z.B. für GUI-Progressbar)
+def report(current_line: int, total_lines: int) -> None:
+    pct = int(current_line * 100 / max(1, total_lines))
+    print(f"\rParsing... {pct}%", end="")
+
+doc = IniParser.parse_file("large.ini", progress_callback=report)
 ```
 
 ---
@@ -278,15 +295,20 @@ Die GUI ist auf mehrere kleine Module aufgeteilt, damit jede Datei eine klar abg
 │                   Datenmodell                            │
 │  IniDocument                                             │
 │  ├── header_comments: list[str]                          │
-│  ├── sections: list[IniSection]                          │
+│  ├── sections: list[IniSection]   (Duplikate erlaubt)    │
 │  │   ├── name: str                                       │
 │  │   ├── preceding_comments: list[str]                   │
-│  │   ├── entries: list[IniEntry]                         │
+│  │   ├── entries: list[IniEntry]  (Duplikate erlaubt)    │
 │  │   │   ├── key, value: str                             │
 │  │   │   ├── preceding_comments: list[str]               │
 │  │   │   └── inline_comment: str                         │
 │  │   └── trailing_comments: list[str]                    │
-│  └── trailing_comments: list[str]                        │
+│  ├── trailing_comments: list[str]                        │
+│  └── duplicates: list[DuplicateRecord]                   │
+│      └── (kind, section, key, line) — Parser-Output      │
+│                                                          │
+│  Lookups (get_section / get_entry): first-wins,          │
+│  identisch zu Win32 GetPrivateProfileString              │
 └─────────────────────┬───────────────────────────────────┘
           ┌───────────┴───────────┐
           │                       │

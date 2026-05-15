@@ -4,8 +4,8 @@ ini-file-editor
 Comment-preserving INI editor with PyQt6 GUI and multi-format export.
 
 This documentation is generated from the source-code docstrings. For the
-end-user manual see the bilingual ``manual-de.md`` / ``manual-en.md`` files
-at the repository root.
+end-user manual see the bilingual ``docs/manuals/manual-de.md`` /
+``docs/manuals/manual-en.md`` files.
 
 .. toctree::
    :maxdepth: 2

@@ -47,18 +47,25 @@ class IniTreeWidget(QTreeWidget):
     document_changed = pyqtSignal()
     about_to_change = pyqtSignal()
 
-    _DUPLICATE_BG = QColor("#5b3232")
-    _DUPLICATE_WINNER_BG = QColor("#5b5232")
+    # Win32 duplicate-role markers shown in the trailing role column.
+    _ROLE_SYMBOL_WINNER   = "★"
+    _ROLE_SYMBOL_SHADOWED = "↓"
+    # Background tint mirrors the duplicate role. Unlike the diff view,
+    # the structure overview has no per-row status colour to collide with,
+    # so a subtle tint helps the duplicates stand out at a glance.
+    _ROLE_BG_WINNER   = QColor("#5b5232")
+    _ROLE_BG_SHADOWED = QColor("#5b3232")
 
     def __init__(self, language: Language, parent: Optional[QWidget] = None) -> None:
         """Build the widget. Pass ``language`` for initial header labels."""
         super().__init__(parent)
         self._language = language
-        self.setColumnCount(3)
+        self.setColumnCount(4)
         self._refresh_header_labels()
         self.header().setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)
         self.header().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         self.header().setSectionResizeMode(2, QHeaderView.ResizeMode.Interactive)
+        self.header().setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
         self.setAlternatingRowColors(True)
         self.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
@@ -75,10 +82,12 @@ class IniTreeWidget(QTreeWidget):
         return translate(self._language, key, **kwargs)
 
     def _refresh_header_labels(self) -> None:
+        # Trailing column has no header label — only the role symbol is shown.
         self.setHeaderLabels([
             self._t("tree_header_section"),
             self._t("tree_header_value"),
             self._t("tree_header_comment"),
+            "",
         ])
 
     def load_document(self, doc: IniDocument) -> None:
@@ -112,20 +121,24 @@ class IniTreeWidget(QTreeWidget):
         for sec in sections:
             sec_item = QTreeWidgetItem(self)
             self._style_section_item(sec_item, sec)
-            if id(sec) in dup_section_ids:
-                self._mark_duplicate(sec_item)
-            elif id(sec) in winner_section_ids:
-                self._mark_winner(sec_item)
+            self._apply_role(
+                sec_item,
+                winner=id(sec) in winner_section_ids,
+                shadowed=id(sec) in dup_section_ids,
+                is_section=True,
+            )
             entries = list(sec.entries)
             if self._sort_mode in (SortMode.KEYS_ALPHA, SortMode.SECTIONS_AND_KEYS_ALPHA):
                 entries = sorted(entries, key=lambda e: e.key.lower())
             for entry in entries:
                 entry_item = QTreeWidgetItem(sec_item)
                 self._style_entry_item(entry_item, entry)
-                if id(entry) in dup_entry_ids:
-                    self._mark_duplicate(entry_item)
-                elif id(entry) in winner_entry_ids:
-                    self._mark_winner(entry_item)
+                self._apply_role(
+                    entry_item,
+                    winner=id(entry) in winner_entry_ids,
+                    shadowed=id(entry) in dup_entry_ids,
+                    is_section=False,
+                )
             sec_item.setExpanded(True)
 
     def _collect_duplicate_ids(
@@ -172,26 +185,56 @@ class IniTreeWidget(QTreeWidget):
                 dup_entry_ids.update(ids[1:])
         return winner_section_ids, dup_section_ids, winner_entry_ids, dup_entry_ids
 
-    def _mark_duplicate(self, item: QTreeWidgetItem) -> None:
-        self._tint_item(item, self._DUPLICATE_BG, self._t("duplicate_tooltip"))
+    def _apply_role(
+        self, item: QTreeWidgetItem, *,
+        winner: bool, shadowed: bool, is_section: bool,
+    ) -> None:
+        """Render Win32 duplicate role via font + symbol in the trailing column.
 
-    def _mark_winner(self, item: QTreeWidgetItem) -> None:
-        self._tint_item(item, self._DUPLICATE_WINNER_BG, self._t("duplicate_winner_tooltip"))
+        Background tinting is avoided so it doesn't compete with the value
+        colour-coding in :meth:`_style_entry_item`. Instead the role shows
+        up as:
 
-    def _tint_item(self, item: QTreeWidgetItem, color: QColor, tooltip: str) -> None:
-        brush = QBrush(color)
-        for c in range(self.columnCount()):
-            item.setBackground(c, brush)
+        - section rows: always bold; SHADOWED adds italics
+        - entry rows: WINNER → bold, SHADOWED → italic, neither → normal
+        - trailing column carries ★ (winner) or ↓ (shadowed); empty otherwise
+        - tooltip on every column of the row
+        """
+        bold = is_section or winner
+        italic = shadowed
+        font = QFont()
+        font.setBold(bold)
+        font.setItalic(italic)
+        col_count = self.columnCount()
+        for c in range(col_count):
+            item.setFont(c, font)
+
+        if winner:
+            symbol = self._ROLE_SYMBOL_WINNER
+            bg = self._ROLE_BG_WINNER
+            tooltip = self._t("duplicate_winner_tooltip")
+        elif shadowed:
+            symbol = self._ROLE_SYMBOL_SHADOWED
+            bg = self._ROLE_BG_SHADOWED
+            tooltip = self._t("duplicate_tooltip")
+        else:
+            item.setText(col_count - 1, "")
+            return
+
+        item.setText(col_count - 1, symbol)
+        item.setTextAlignment(col_count - 1, Qt.AlignmentFlag.AlignCenter)
+        bg_brush = QBrush(bg)
+        for c in range(col_count):
+            item.setBackground(c, bg_brush)
             item.setToolTip(c, tooltip)
 
     def _style_section_item(self, item: QTreeWidgetItem, sec: IniSection) -> None:
+        # Font (bold for sections, plus italic for SHADOWED) is owned by
+        # :meth:`_apply_role`; this method just refreshes text and colour.
         item.setText(0, f"[{sec.name}]")
         item.setText(1, "")
         comment_text = " | ".join(c for c in sec.preceding_comments if c.strip())
         item.setText(2, comment_text)
-        font = QFont()
-        font.setBold(True)
-        item.setFont(0, font)
         item.setForeground(0, QColor("#569CD6"))
         item.setData(0, Qt.ItemDataRole.UserRole, sec)
 

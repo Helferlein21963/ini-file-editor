@@ -20,6 +20,7 @@ A comment-preserving INI file editor with a graphical interface, flexible sortin
 12. [Switching Language](#12-switching-language)
 13. [Keyboard Shortcuts](#13-keyboard-shortcuts)
 14. [Notes on Character Encodings](#14-notes-on-character-encodings)
+15. [Handling Duplicates (Win32 convention)](#15-handling-duplicates-win32-convention)
 
 ---
 
@@ -83,6 +84,10 @@ On startup, the main window opens with an empty, untitled document.
 
 > **Character encoding**: The editor automatically detects UTF-8, UTF-8 BOM, Windows ANSI (cp1252), and latin-1. No manual selection is required.
 
+> **Progress indicator**: When loading large files, a progress bar appears on the right side of the status bar covering both the parser and the UI build phases.
+
+> **Duplicate detection**: If duplicate sections or keys are found during parsing (see [Section 15](#15-handling-duplicates-win32-convention)), the status bar shows a notice and the affected lines are highlighted in the structure view and preview.
+
 ### Saving a file
 
 - **Save** (`Ctrl+S`) – saves the file to its original location as INI.
@@ -109,7 +114,9 @@ The tree on the left displays the file hierarchically:
       level   INFO          ; Logging level
 ```
 
-**Columns**: Key / Section | Value | Comment
+**Columns**: Key / Section | Value | Comment | Duplicate symbol
+
+The narrow trailing column without a header label shows the duplicate role: **★** marks the first occurrence (what Win32 actually reads, rendered in bold) and **↓** marks shadowed duplicates (rendered in italic). The whole row is also tinted (yellowish/reddish). See [Section 15](#15-handling-duplicates-win32-convention) for details.
 
 **Navigation**:
 - Click the arrow `▼` / `▶` to expand or collapse a section.
@@ -181,6 +188,8 @@ The **preview** on the right shows the file live in the selected format. The for
 
 > **Note**: Comments are only preserved in INI format. JSON, XML, and YAML contain key-value pairs only.
 
+> **Duplicate highlighting in INI format**: Duplicate section headers and duplicate keys are tinted in the preview — yellowish for the first (winner) occurrence, reddish for each shadowed duplicate. JSON/XML/YAML have dictionary semantics and cannot represent duplicates, so no highlighting is applied there. See [Section 15](#15-handling-duplicates-win32-convention).
+
 ### Exporting a file
 
 1. Select the format in the dropdown.
@@ -250,19 +259,23 @@ Diff mode compares two open documents section by section and entry by entry.
 ### Diff view
 
 ```
-A: config_prod.ini                        B: config_test.ini
-□ Show differences only  🔀 Sort: No sorting ▼   2 modified · 1 added
-┌────────────────────┬───────────────┬───────────────┬────┐
-│ Section / Key      │ Value A       │ Value B       │    │
-├────────────────────┼───────────────┼───────────────┼────┤
-│ [database]         │               │               │  ＝ │
-│   host             │ prod-db.int   │ test-db.int   │  ≠ │
-│   port             │ 5432          │ 5432          │  ＝ │
-│ [cache]            │               │               │  ＋ │  ← only in B
-└────────────────────┴───────────────┴───────────────┴────┘
+A: config_prod.ini                                B: config_test.ini
+□ Show differences only  🔀 Sort: No sorting ▼    2 modified · 1 added
+┌────────────────────┬───────────────┬───────────────┬────┬─────────┐
+│ Section / Key      │ Value A       │ Value B       │    │Duplicate│
+│                    │               │               │    │(Win32)  │
+├────────────────────┼───────────────┼───────────────┼────┼─────────┤
+│ [database]         │               │               │  ＝ │         │
+│   host             │ prod-db.int   │ test-db.int   │  ≠ │         │
+│   port             │ 5432          │ 5432          │  ＝ │         │
+│ [cache]            │               │               │  ＋ │         │  ← only in B
+│ [application]      │               │               │  ＝ │   ★    │  ← duplicate winner
+│   name             │ App           │ App           │  ＝ │   ★    │     (bold)
+│   name             │               │ ThomasIni     │  ＋ │   ↓    │  ← shadowed
+└────────────────────┴───────────────┴───────────────┴────┴─────────┘     duplicate (italic)
 ```
 
-### Color coding
+### Color coding (diff status)
 
 | Color | Meaning | Symbol |
 |---|---|---|
@@ -270,6 +283,18 @@ A: config_prod.ini                        B: config_test.ini
 | Red | Only in file A (removed) | － |
 | Yellow | Value differs (modified) | ≠ |
 | None | Identical | ＝ |
+
+### The "Duplicate (Win32 call)" column
+
+This extra column on the right shows how Win32 applications (`GetPrivateProfileString`) behave with respect to duplicate sections or keys:
+
+| Symbol | Font | Meaning |
+|---|---|---|
+| **★** | bold | First occurrence — what Win32 actually reads |
+| **↓** | italic | Shadowed duplicate — physically in the file but invisible to Win32 |
+| (empty) | normal | Unique entry, no duplicate |
+
+In the diff tab the duplicate role is intentionally rendered **without** a background tint, so it doesn't collide with the diff status colour (green/red/yellow). The comparison pairs the N-th instance from A with the N-th instance from B — a shadowed row therefore shows the *actual* value of that occurrence, not the winner value. See [Section 15](#15-handling-duplicates-win32-convention) for details.
 
 ### Options in the diff tab
 
@@ -301,7 +326,7 @@ The merge function combines multiple INI files into a single document.
 2. Select one or more INI files (multiple selection supported).
 3. All sections and entries are merged into the active document.
 
-> If the same key exists in the same section across multiple files, the value from the last file read wins.
+> **First-wins on merge**: Existing keys in the target document stay unchanged — the merge function only adds missing entries. This matches the Win32 convention (see [Section 15](#15-handling-duplicates-win32-convention)) and ensures that, when merging several configuration snapshots, the first one loaded remains authoritative.
 
 ---
 
@@ -359,3 +384,78 @@ The editor automatically detects the encoding of a file when opening it, trying 
 Files are always saved as **UTF-8** (without BOM). If you open an ANSI-encoded file and save it, the result will be a UTF-8 file – the content is preserved correctly.
 
 > Special characters such as `ä`, `ö`, `ü`, `ß`, and `€` from ANSI files are correctly recognized and displayed.
+
+---
+
+## 15. Handling Duplicates (Win32 convention)
+
+In practice INI files are very often consumed by Win32 applications via `GetPrivateProfileString`. That API has a very specific behaviour for duplicate sections and duplicate keys, and the editor mirrors it exactly — what you see while editing should match what the production application actually reads.
+
+### What Win32 really sees
+
+`GetPrivateProfileString` walks the file sequentially from the top and returns **the first match**:
+
+1. It finds the first `[section]` with the searched-for name.
+2. Inside that section, it returns the first matching key.
+3. **If the key is not found there, it does *not* keep searching in later same-named sections** — the default value is returned instead.
+
+Consequence: a second `[foo]` block with entirely different keys is **invisible** to Win32, unless those keys happen to also exist in the first block.
+
+### How the editor reflects this
+
+| Aspect | Behaviour |
+|---|---|
+| **Parsing** | Duplicate sections and duplicate keys are preserved verbatim — as separate `IniSection`/`IniEntry` instances in the data model. Nothing is silently merged. |
+| **Lookup** | `IniDocument.get_section(name)` and `IniSection.get_entry(key)` return the **first** match (exactly like Win32). `set_entry` and `remove_entry` likewise operate on the first occurrence. |
+| **Round-trip** | When saving, the file is reconstructed byte for byte, including all duplicates. Nothing is lost. |
+| **Detection** | During parsing each duplicate is recorded in `IniDocument.duplicates` as a `DuplicateRecord(kind, section, key, line)`. The GUI uses this list to inform the user. |
+
+### Visual markers in the GUI
+
+When duplicates are detected, the editor communicates this in three places at once:
+
+1. **Status bar** at the bottom shows "N duplicate(s) detected — affected lines are highlighted in the preview and structure view."
+2. **Structure overview (tree)**: Affected rows get a tinted background and a symbol in the narrow trailing column:
+   - **★** (bold) on a yellowish background — *winner*, what Win32 sees
+   - **↓** (italic) on a reddish background — *shadowed*, invisible to Win32
+3. **Preview** (INI format only): The corresponding lines are tinted as well — yellow for the winner, red for every shadowed duplicate.
+
+Hovering over a marked row reveals a tooltip explaining its meaning.
+
+### Example
+
+```ini
+[application]
+name = MyApp
+session_timeout = 60          ; ← Winner: this is what Win32 sees
+session_timeout = 90          ; ← Shadowed: invisible to Win32
+secret_key = abc
+
+[network]                     ; ← Winner section
+host = prod-server-01
+
+[network]                     ; ← Shadowed section: entire block invisible to Win32
+failover_host = prod-server-02
+timeout = 99
+```
+
+In this example:
+- A Win32 lookup `application/session_timeout` returns `60` (not `90`).
+- A Win32 lookup `network/host` returns `prod-server-01`.
+- A Win32 lookup `network/failover_host` returns the **default value** — the second `[network]` block is completely invisible, even though it is in the file.
+
+### Behaviour in the comparison (diff)
+
+The diff mode honours Win32 semantics in its value-comparison logic: it pairs the N-th instance from file A with the N-th instance from file B (occurrence-index pairing). Practical consequence:
+
+- If A has `name = MyApp` once and B has `name = MyApp` plus `name = ThomasIni`, the diff shows **two** `name` rows: the first as winner (★, both equal), the second as shadowed (↓) with `ThomasIni` on the B side.
+- Shadowed values are therefore shown explicitly — they are not masked by the winner's value.
+
+### Behaviour when saving/exporting
+
+- **INI export**: round-trip faithful, duplicates preserved.
+- **JSON / XML / YAML**: these formats have dictionary semantics and cannot represent duplicates. On export the first entry wins (Win32-conformant); later entries with the same name are dropped. This is intentional — a JSON consumer should see the same value a Win32 consumer would.
+
+### When are duplicates a problem?
+
+Duplicate entries often appear by accident, e.g. when patches are appended to a file without removing the original. They are not necessarily a bug — the editor permits them on purpose because they appear in legacy configurations and sometimes serve as a form of documentation ("old value still visible, new value active"). If you want to clean them up, you can delete shadowed rows via the structure view's context menu.

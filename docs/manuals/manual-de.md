@@ -20,6 +20,7 @@ Ein kommentarerhaltender INI-Datei-Editor mit grafischer Oberfläche, flexibler 
 12. [Sprache wechseln](#12-sprache-wechseln)
 13. [Tastaturkürzel](#13-tastaturkürzel)
 14. [Hinweise zu Zeichenkodierungen](#14-hinweise-zu-zeichenkodierungen)
+15. [Umgang mit Duplikaten (Win32-Konvention)](#15-umgang-mit-duplikaten-win32-konvention)
 
 ---
 
@@ -83,6 +84,10 @@ Beim Start öffnet sich das Hauptfenster mit einem leeren, unbenannten Dokument.
 
 > **Zeichenkodierung**: Der Editor erkennt UTF-8, UTF-8-BOM, Windows-ANSI (cp1252) und latin-1 automatisch. Es ist keine manuelle Auswahl notwendig.
 
+> **Fortschrittsanzeige**: Beim Laden großer Dateien erscheint rechts in der Statusleiste eine Fortschrittsleiste, die Parser- und UI-Aufbau-Phasen abbildet.
+
+> **Duplikat-Erkennung**: Werden beim Parsen doppelte Sections oder Keys gefunden (siehe [Kapitel 15](#15-umgang-mit-duplikaten-win32-konvention)), zeigt die Statusleiste einen Hinweis und die betroffenen Zeilen werden in Strukturübersicht und Vorschau hervorgehoben.
+
 ### Datei speichern
 
 - **Speichern** (`Strg+S`) – speichert die Datei am ursprünglichen Ort als INI.
@@ -109,7 +114,9 @@ Der Baum auf der linken Seite zeigt die Datei hierarchisch:
       level   INFO          ; Logging-Level
 ```
 
-**Spalten**: Schlüssel / Abschnitt | Wert | Kommentar
+**Spalten**: Schlüssel / Abschnitt | Wert | Kommentar | Duplikat-Symbol
+
+Die schmale letzte Spalte ohne Header zeigt die Duplikat-Rolle: **★** für das erste Vorkommen (was Win32 sieht, fett dargestellt) und **↓** für geschattete Duplikate (kursiv dargestellt). Die Zeile ist zusätzlich farblich hinterlegt (gelblich/rötlich). Details siehe [Kapitel 15](#15-umgang-mit-duplikaten-win32-konvention).
 
 **Navigation**:
 - Klick auf den Pfeil `▼` / `▶` klappt einen Abschnitt auf oder zu.
@@ -181,6 +188,8 @@ Die **Vorschau** rechts zeigt die Datei live im gewählten Format. Das Format wi
 
 > **Hinweis**: Kommentare sind nur im INI-Format erhalten. JSON, XML und YAML enthalten ausschließlich Schlüssel-Wert-Paare.
 
+> **Duplikat-Hervorhebung im INI-Format**: Doppelte Section-Header und doppelte Keys werden in der Vorschau farbig unterlegt — gelblich für das erste Vorkommen, rötlich für die geschatteten Duplikate. In JSON/XML/YAML entfällt das, da diese Formate Wörterbuch-Semantik haben und Duplikate gar nicht abbilden können. Siehe [Kapitel 15](#15-umgang-mit-duplikaten-win32-konvention).
+
 ### Datei exportieren
 
 1. Format im Dropdown auswählen.
@@ -250,19 +259,23 @@ Der Diff-Modus vergleicht zwei geöffnete Dokumente Abschnitt für Abschnitt und
 ### Diff-Ansicht
 
 ```
-A: config_prod.ini                        B: config_test.ini
+A: config_prod.ini                                B: config_test.ini
 □ Nur Unterschiede zeigen  🔀 Sortierung: Keine Sortierung ▼   2 geändert · 1 hinzugefügt
-┌────────────────────┬───────────────┬───────────────┬────┐
-│ Abschnitt / Schlüssel │ Wert A     │ Wert B        │    │
-├────────────────────┼───────────────┼───────────────┼────┤
-│ [database]         │               │               │  ＝ │
-│   host             │ prod-db.int   │ test-db.int   │  ≠ │
-│   port             │ 5432          │ 5432          │  ＝ │
-│ [cache]            │               │               │  ＋ │  ← nur in B
-└────────────────────┴───────────────┴───────────────┴────┘
+┌────────────────────┬───────────────┬───────────────┬────┬─────────┐
+│ Abschnitt/Schlüssel│ Wert A        │ Wert B        │    │ Duplikat│
+│                    │               │               │    │ (Win32) │
+├────────────────────┼───────────────┼───────────────┼────┼─────────┤
+│ [database]         │               │               │  ＝ │         │
+│   host             │ prod-db.int   │ test-db.int   │  ≠ │         │
+│   port             │ 5432          │ 5432          │  ＝ │         │
+│ [cache]            │               │               │  ＋ │         │  ← nur in B
+│ [application]      │               │               │  ＝ │   ★    │  ← Duplikat-Winner
+│   name             │ App           │ App           │  ＝ │   ★    │     (fett)
+│   name             │               │ ThomasIni     │  ＋ │   ↓    │  ← geschattetes
+└────────────────────┴───────────────┴───────────────┴────┴─────────┘     Duplikat (kursiv)
 ```
 
-### Farbkodierung
+### Farbkodierung (Diff-Status)
 
 | Farbe | Bedeutung | Symbol |
 |---|---|---|
@@ -270,6 +283,18 @@ A: config_prod.ini                        B: config_test.ini
 | Rot | Nur in Datei A vorhanden (entfernt) | － |
 | Gelb | Wert unterschiedlich (geändert) | ≠ |
 | Keine | Identisch | ＝ |
+
+### Duplikat-Spalte „Duplikat (Win32-Aufruf)"
+
+Diese zusätzliche Spalte am rechten Rand zeigt, wie sich Win32-Anwendungen (`GetPrivateProfileString`) bei doppelten Sections oder Keys verhalten:
+
+| Symbol | Schrift | Bedeutung |
+|---|---|---|
+| **★** | fett | Erstes Vorkommen — das, was Win32 tatsächlich liest |
+| **↓** | kursiv | Geschattetes Duplikat — physisch in der Datei, aber für Win32 unsichtbar |
+| (leer) | normal | Eindeutiger Eintrag, kein Duplikat |
+
+Im Diff-Tab wird die Duplikat-Rolle bewusst **ohne** Hintergrundfarbe dargestellt, damit sie nicht mit der Diff-Status-Farbe (Grün/Rot/Gelb) kollidiert. Der Vergleich pairt die N-te Instanz aus A mit der N-ten Instanz aus B — eine geschattete Zeile zeigt also den *tatsächlichen* Wert dieses Vorkommens und nicht den Winner-Wert. Mehr dazu in [Kapitel 15](#15-umgang-mit-duplikaten-win32-konvention).
 
 ### Optionen im Diff-Tab
 
@@ -301,7 +326,7 @@ Mit der Merge-Funktion können mehrere INI-Dateien zu einem einzigen Dokument ko
 2. Eine oder mehrere INI-Dateien auswählen (Mehrfachauswahl möglich).
 3. Alle Abschnitte und Einträge werden in das aktive Dokument eingebunden.
 
-> Bei gleichnamigen Schlüsseln in identischen Abschnitten gewinnt die zuletzt eingelesene Datei.
+> **First-wins beim Merge**: Bereits vorhandene Schlüssel im Zieldokument bleiben unverändert — die Merge-Funktion fügt nur fehlende Einträge hinzu. Dieses Verhalten entspricht der Win32-Konvention (siehe [Kapitel 15](#15-umgang-mit-duplikaten-win32-konvention)) und sorgt dafür, dass beim Zusammenführen mehrerer Konfigurationsstände die zuerst geladene Variante die maßgebliche bleibt.
 
 ---
 
@@ -359,3 +384,78 @@ Der Editor erkennt die Kodierung einer Datei automatisch beim Öffnen und probie
 Gespeichert wird immer als **UTF-8** (ohne BOM). Wer eine ANSI-Datei bearbeitet und speichert, erhält danach eine UTF-8-Datei – der Inhalt bleibt korrekt erhalten.
 
 > Sonderzeichen wie `ä`, `ö`, `ü`, `ß` und `€` aus ANSI-Dateien werden korrekt erkannt und angezeigt.
+
+---
+
+## 15. Umgang mit Duplikaten (Win32-Konvention)
+
+INI-Dateien werden in der Praxis häufig von Win32-Anwendungen über `GetPrivateProfileString` gelesen. Diese API hat eine sehr spezifische Semantik bei doppelten Sections und doppelten Keys, die der Editor exakt nachbildet — denn was beim Bearbeiten in der GUI sichtbar ist, soll dem entsprechen, was die produktive Anwendung später tatsächlich liest.
+
+### Was Win32 tatsächlich sieht
+
+`GetPrivateProfileString` durchsucht die Datei sequentiell von oben und liefert **den ersten Treffer**:
+
+1. Die erste `[section]` mit dem gesuchten Namen wird gefunden.
+2. Innerhalb dieser Section wird der erste passende Key zurückgegeben.
+3. **Findet der Key dort nicht, wird *nicht* in einer späteren gleichnamigen Section weitergesucht** — es kommt der Default-Wert zurück.
+
+Konsequenz: Ein zweiter Block `[foo]` mit komplett anderen Keys ist für Win32 **unsichtbar**, solange seine Keys nicht zufällig auch im ersten Block existieren.
+
+### Wie der Editor das abbildet
+
+| Aspekt | Verhalten |
+|---|---|
+| **Parsen** | Duplizierte Sections und Keys bleiben verbatim erhalten — als separate `IniSection`/`IniEntry`-Instanzen im Datenmodell. Es wird *nichts* still zusammengeführt. |
+| **Lookup** | `IniDocument.get_section(name)` und `IniSection.get_entry(key)` liefern den **ersten** Treffer (genau wie Win32). Auch `set_entry` und `remove_entry` arbeiten nur auf dem ersten Vorkommen. |
+| **Round-Trip** | Beim Speichern wird die Datei byte-für-byte rekonstruiert, inklusive aller Duplikate. Es geht nichts verloren. |
+| **Erkennung** | Während des Parsens werden Duplikate in `IniDocument.duplicates` als `DuplicateRecord(kind, section, key, line)` aufgezeichnet. Die GUI fragt diese Liste ab, um den Anwender zu informieren. |
+
+### Visuelle Markierung in der GUI
+
+Sobald Duplikate erkannt werden, kommuniziert der Editor das gleichzeitig auf drei Wegen:
+
+1. **Statusleiste** unten zeigt „N Duplikat(e) erkannt — betroffene Zeilen sind in Vorschau und Strukturansicht hervorgehoben."
+2. **Strukturübersicht (Tree)**: Betroffene Zeilen bekommen einen farbigen Hintergrund und ein Symbol in der schmalen letzten Spalte:
+   - **★** (fett) auf gelblichem Hintergrund — *Winner*, das was Win32 sieht
+   - **↓** (kursiv) auf rötlichem Hintergrund — *Shadowed*, für Win32 unsichtbar
+3. **Vorschau** (nur INI-Format): Die entsprechenden Zeilen werden ebenfalls hinterlegt — gelb für den Winner, rot für jedes geschattete Duplikat.
+
+Wenn Sie über eine markierte Zeile hovern, erklärt ein Tooltip die Bedeutung.
+
+### Beispiel
+
+```ini
+[application]
+name = MeineApp
+session_timeout = 60          ; ← Winner: das sieht Win32
+session_timeout = 90          ; ← Shadowed: für Win32 unsichtbar
+secret_key = abc
+
+[network]                     ; ← Winner-Section
+host = prod-server-01
+
+[network]                     ; ← Shadowed-Section: kompletter Block für Win32 unsichtbar
+failover_host = prod-server-02
+timeout = 99
+```
+
+In diesem Beispiel:
+- Win32-Lookup `application/session_timeout` liefert `60` (nicht `90`).
+- Win32-Lookup `network/host` liefert `prod-server-01`.
+- Win32-Lookup `network/failover_host` liefert den **Default-Wert** — die zweite `[network]`-Section ist komplett unsichtbar, obwohl sie in der Datei steht.
+
+### Verhalten beim Vergleich (Diff)
+
+Der Diff-Modus berücksichtigt Win32-Semantik bei der Wertvergleichs-Logik: Es wird die N-te Instanz aus Datei A mit der N-ten Instanz aus Datei B verglichen (Pairing per Occurrence-Index). Praktische Folge:
+
+- Hat A `name = MyApp` einmal und B hat `name = MyApp` plus `name = ThomasIni`, dann erscheinen im Diff **zwei** `name`-Zeilen: die erste als Winner (★, beide gleich), die zweite als Shadowed (↓) mit `ThomasIni` auf der B-Seite.
+- Geschattete Werte werden also explizit angezeigt — nicht durch den Winner-Wert maskiert.
+
+### Verhalten beim Speichern/Export
+
+- **INI-Export**: Round-trip-treu, Duplikate bleiben.
+- **JSON / XML / YAML**: Diese Formate haben Dictionary-Semantik und können Duplikate gar nicht abbilden. Beim Export gewinnt der erste Eintrag (Win32-konform); spätere gleichnamige Einträge gehen verloren. Das ist beabsichtigt — ein JSON-Konsument soll denselben Wert sehen wie ein Win32-Konsument.
+
+### Wann sind Duplikate problematisch?
+
+Doppelte Einträge entstehen oft unbeabsichtigt, z.B. durch nachträgliches Anhängen von Patches an eine Datei. Sie sind nicht zwingend ein Fehler — der Editor erlaubt sie bewusst, weil sie in Bestandskonfigurationen vorkommen und manchmal als Form von Dokumentation dienen („alter Wert noch sichtbar, neuer Wert aktiv"). Wer Duplikate aktiv loswerden will, kann sie in der Strukturübersicht über das Kontextmenü löschen.

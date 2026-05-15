@@ -22,9 +22,9 @@ except ModuleNotFoundError:
     from ini_parser import SortMode  # type: ignore[no-redef]
 
 try:
-    from src.ini_diff import DiffStatus, IniDiff
+    from src.ini_diff import DiffStatus, DuplicateRole, IniDiff
 except ModuleNotFoundError:
-    from ini_diff import DiffStatus, IniDiff  # type: ignore[no-redef]
+    from ini_diff import DiffStatus, DuplicateRole, IniDiff  # type: ignore[no-redef]
 
 try:
     from src.translations import Language, translate
@@ -49,6 +49,7 @@ class DiffTab(QWidget):
     _FG_ADDED    = QColor("#a6e3a1")
     _FG_REMOVED  = QColor("#f38ba8")
     _FG_MODIFIED = QColor("#f9e2af")
+
 
     def __init__(
         self,
@@ -113,7 +114,7 @@ class DiffTab(QWidget):
         layout.addLayout(opts)
 
         self._tree = QTreeWidget()
-        self._tree.setColumnCount(4)
+        self._tree.setColumnCount(5)
         self._tree.setAlternatingRowColors(False)
         self._tree.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         hdr = self._tree.header()
@@ -121,6 +122,7 @@ class DiffTab(QWidget):
         hdr.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         hdr.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
         hdr.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
+        hdr.setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
         layout.addWidget(self._tree)
 
         self._find_bar_widget = QWidget()
@@ -189,7 +191,10 @@ class DiffTab(QWidget):
             self._doc_name(self._tab_a),
             self._doc_name(self._tab_b),
             "",
+            translate(self._language, "diff_col_role"),
         ])
+        # Center-align the Win32 column header to match the centered symbols
+        self._tree.headerItem().setTextAlignment(4, Qt.AlignmentFlag.AlignCenter)
         self._find_label.setText(translate(self._language, "find_label"))
         self._find_case_check.setText(translate(self._language, "find_case_sensitive"))
         self._find_prev_btn.setToolTip(translate(self._language, "find_prev"))
@@ -231,6 +236,16 @@ class DiffTab(QWidget):
             doc_b = doc_b.sorted_copy(self._sort_mode)
 
         diff = IniDiff.compare(doc_a, doc_b)
+
+        # Post-sort the merged diff so that A-only and B-only / B-excess
+        # rows interleave alphabetically instead of being concatenated.
+        # Python's sort is stable, so within a duplicated name the
+        # WINNER row stays before its SHADOWED siblings.
+        if self._sort_mode in (SortMode.SECTIONS_ALPHA, SortMode.SECTIONS_AND_KEYS_ALPHA):
+            diff.sections.sort(key=lambda s: s.name.lower())
+        if self._sort_mode in (SortMode.KEYS_ALPHA, SortMode.SECTIONS_AND_KEYS_ALPHA):
+            for sec in diff.sections:
+                sec.entries.sort(key=lambda e: e.key.lower())
         self._refresh_static_labels()
         self._tree.clear()
         self._find_matches = []
@@ -243,10 +258,8 @@ class DiffTab(QWidget):
             sec_item = QTreeWidgetItem(self._tree)
             sec_item.setText(0, f"[{sec_diff.name}]")
             sec_item.setText(3, self._status_symbol(sec_diff.status))
-            font = QFont()
-            font.setBold(True)
-            sec_item.setFont(0, font)
-            self._colorize(sec_item, sec_diff.status, cols=(0, 3))
+            self._colorize(sec_item, sec_diff.status, cols=range(5))
+            self._apply_role(sec_item, sec_diff.duplicate_role, is_section=True)
 
             for ed in sec_diff.entries:
                 if self._only_diffs and ed.status == DiffStatus.UNCHANGED:
@@ -256,7 +269,8 @@ class DiffTab(QWidget):
                 row.setText(1, ed.value_a or "")
                 row.setText(2, ed.value_b or "")
                 row.setText(3, self._status_symbol(ed.status))
-                self._colorize(row, ed.status, cols=range(4))
+                self._colorize(row, ed.status, cols=range(5))
+                self._apply_role(row, ed.duplicate_role, is_section=False)
 
             sec_item.setExpanded(True)
 
@@ -353,3 +367,51 @@ class DiffTab(QWidget):
         for c in cols:
             item.setBackground(c, bg_brush)
             item.setForeground(c, fg_brush)
+
+    # Symbols shown in the role column. Kept short so the column stays
+    # narrow; the tooltip explains the meaning.
+    _ROLE_SYMBOL_WINNER   = "★"
+    _ROLE_SYMBOL_SHADOWED = "↓"
+
+    def _apply_role(
+        self, item: QTreeWidgetItem, role: DuplicateRole, *, is_section: bool,
+    ) -> None:
+        """Render a row's Win32 duplicate role via font and a dedicated column.
+
+        Avoids background tinting so it doesn't collide with the status
+        colours (REMOVED is red, MODIFIED is yellow — same hues we'd
+        otherwise want for shadowed / winner). Instead:
+
+        - section rows are always bold; if SHADOWED we add italics
+        - entry rows: WINNER → bold, SHADOWED → italic, NONE → unchanged
+        - column 4 carries a ★ (winner) or ↓ (shadowed) symbol
+        - the appropriate tooltip is set on every column of the row
+        """
+        # Sections are intrinsically bold (section header convention);
+        # entries inherit bold/italic only when the role demands it.
+        bold = is_section or role == DuplicateRole.WINNER
+        italic = role == DuplicateRole.SHADOWED
+        font = QFont()
+        font.setBold(bold)
+        font.setItalic(italic)
+        col_count = self._tree.columnCount()
+        for c in range(col_count):
+            item.setFont(c, font)
+
+        if role == DuplicateRole.NONE:
+            return
+
+        symbol = (
+            self._ROLE_SYMBOL_WINNER
+            if role == DuplicateRole.WINNER
+            else self._ROLE_SYMBOL_SHADOWED
+        )
+        tooltip = translate(
+            self._language,
+            "duplicate_winner_tooltip" if role == DuplicateRole.WINNER
+            else "duplicate_tooltip",
+        )
+        item.setText(4, symbol)
+        item.setTextAlignment(4, Qt.AlignmentFlag.AlignCenter)
+        for c in range(col_count):
+            item.setToolTip(c, tooltip)

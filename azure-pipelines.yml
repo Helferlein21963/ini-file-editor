@@ -71,6 +71,22 @@ stages:
             displayName: 'Publish executable artifact'
             condition: succeeded()
 
+          - pwsh: |
+              $dest = "$(Build.ArtifactStagingDirectory)/manuals"
+              New-Item -ItemType Directory -Path $dest -Force | Out-Null
+              Get-ChildItem "$(Build.SourcesDirectory)/dist/*.pdf" |
+                Copy-Item -Destination $dest
+            displayName: 'Stage PDF manuals for artifact'
+            condition: succeeded()
+
+          - task: PublishBuildArtifacts@1
+            inputs:
+              pathToPublish: '$(Build.ArtifactStagingDirectory)/manuals'
+              artifactName: 'manuals-pdf'
+              publishLocation: 'Container'
+            displayName: 'Publish PDF manuals as artifact'
+            condition: succeeded()
+
           # - task: PublishBuildArtifacts@1
           #   inputs:
           #     pathToPublish: '$(Build.SourcesDirectory)/build'

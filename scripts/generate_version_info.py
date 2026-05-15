@@ -1,13 +1,29 @@
-"""Generate a PyInstaller version_info.txt with embedded Windows VERSIONINFO resource."""
+﻿"""Generate a PyInstaller version_info.txt with embedded Windows VERSIONINFO resource."""
 
 import os
+import subprocess
 import sys
 
 _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 _PROJECT_ROOT = os.path.dirname(_SCRIPT_DIR)
 
 
+def _get_commit_hash() -> str:
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            capture_output=True,
+            text=True,
+            check=True,
+            cwd=_PROJECT_ROOT,
+        )
+        return result.stdout.strip()
+    except Exception:
+        return "unknown"
+
+
 def generate(major: int, minor: int, patch: int, out_path: str = "version_info.txt") -> None:
+    commit_hash = _get_commit_hash()
     content = f"""VSVersionInfo(
   ffi=FixedFileInfo(
     filevers=({major}, {minor}, {patch}, 0),
@@ -29,7 +45,7 @@ def generate(major: int, minor: int, patch: int, out_path: str = "version_info.t
          StringStruct(u'LegalCopyright', u''),
          StringStruct(u'OriginalFilename', u'ini-file-editor.exe'),
          StringStruct(u'ProductName', u'ini-file-editor'),
-         StringStruct(u'ProductVersion', u'{major}.{minor}')])
+         StringStruct(u'ProductVersion', u'{commit_hash}')])
     ]),
     VarFileInfo([VarStruct(u'Translation', [1031, 1200])])
   ]

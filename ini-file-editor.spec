@@ -24,6 +24,7 @@ ICON_PATH = os.path.join(ASSETS_DIR, 'icon.ico')
 
 # Auto-generate icon.ico from icon*.png if missing or stale.
 import glob
+import shutil
 from pathlib import Path
 
 icon_sources = sorted(glob.glob(os.path.join(ASSETS_DIR, 'icon*.png')))
@@ -45,6 +46,43 @@ asset_datas = [
     (src, 'assets') for src in (LOGO_PATH, ICON_PATH) if os.path.isfile(src)
 ]
 exe_icon = ICON_PATH if os.path.isfile(ICON_PATH) else None
+
+# Generate PDFs from Markdown manuals (skipped if weasyprint/Markdown not installed).
+MANUALS_DIR = os.path.join(os.path.dirname(os.path.abspath(SPEC)), 'docs', 'manuals')
+try:
+    import io as _io
+    import markdown as _md_lib
+    from xhtml2pdf import pisa as _pisa
+
+    _CSS = (
+        '@page{margin:2cm 3cm}'
+        'body{font-family:Helvetica,Arial,sans-serif;font-size:11pt;line-height:1.5;color:#222}'
+        'h1,h2,h3{color:#1a1a2e}'
+        'code{background:#f4f4f4;padding:1px 4px;font-size:9pt}'
+        'pre{background:#f4f4f4;padding:8pt}'
+        'table{border-collapse:collapse;width:100%}'
+        'th,td{border:1px solid #ccc;padding:6px 10px}th{background:#f0f0f0}'
+    )
+    for _src in sorted(glob.glob(os.path.join(MANUALS_DIR, '*.md'))):
+        _src_path = Path(_src)
+        _pdf_path = _src_path.with_suffix('.pdf')
+        _body = _md_lib.markdown(
+            _src_path.read_text(encoding='utf-8'),
+            extensions=['tables', 'fenced_code', 'toc'],
+        )
+        _html = (
+            f"<!DOCTYPE html><html><head><meta charset='utf-8'>"
+            f"<style>{_CSS}</style></head><body>{_body}</body></html>"
+        )
+        with open(str(_pdf_path), 'wb') as _f:
+            _status = _pisa.CreatePDF(_html, dest=_f)
+        if _status.err:
+            print(f'[spec] WARNING: PDF generation had errors for {_src_path.name}')
+        else:
+            print(f'[spec] Generated {_pdf_path.name}')
+    del _io, _md_lib, _pisa, _CSS
+except ImportError:
+    print('[spec] xhtml2pdf/Markdown not installed — skipping manual PDF generation')
 
 a = Analysis(
     ['main.py'],
@@ -83,3 +121,10 @@ exe = EXE(
     version='version_info.txt',
     icon=exe_icon,
 )
+
+# Copy PDF manuals to dist/ so they ship alongside the executable.
+_dist = os.path.join(os.path.dirname(os.path.abspath(SPEC)), 'dist')
+os.makedirs(_dist, exist_ok=True)
+for _pdf in glob.glob(os.path.join(MANUALS_DIR, '*.pdf')):
+    shutil.copy2(_pdf, _dist)
+    print(f'[spec] Copied {os.path.basename(_pdf)} -> dist/')

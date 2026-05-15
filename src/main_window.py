@@ -617,10 +617,18 @@ class MainWindow(QMainWindow):
         try:
             doc = IniParser.parse_file(path)
             tab.load_document(doc)
+            self._warn_about_duplicates(doc, path)
             return True
         except Exception as exc:
             QMessageBox.critical(self, self._t("error_export"), self._t("error_open", exc=str(exc)))
             return False
+
+    def _warn_about_duplicates(self, doc: IniDocument, path: str) -> None:
+        if not doc.duplicates:
+            return
+        self.statusBar().showMessage(
+            self._t("status_duplicates", count=len(doc.duplicates))
+        )
 
     def _open_file_paths(self, paths: list[str | Path]) -> None:
         """Open each path in its own tab.
@@ -694,6 +702,7 @@ class MainWindow(QMainWindow):
             try:
                 doc = IniParser.parse_file(path)
                 tab.doc.merge_from(doc)
+                self._warn_about_duplicates(doc, path)
                 merged += 1
             except Exception as exc:
                 QMessageBox.warning(self, self._t("merge_error"), f"{path}: {exc}")

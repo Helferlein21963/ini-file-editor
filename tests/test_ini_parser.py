@@ -8,7 +8,14 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from ini_parser import ExportFormat, IniDocument, IniParser, IniSection, SortMode
+from ini_parser import (
+    DuplicateKind,
+    ExportFormat,
+    IniDocument,
+    IniParser,
+    IniSection,
+    SortMode,
+)
 
 
 SAMPLE_INI = """\
@@ -183,6 +190,98 @@ class TestDocumentMutation(unittest.TestCase):
         base.merge_from(other)
         self.assertEqual(base.get_section("alpha").get_entry("a").value, "original")
         self.assertEqual(base.get_section("alpha").get_entry("b").value, "added")
+
+
+class TestDuplicates(unittest.TestCase):
+    """Win32 GetPrivateProfileString returns the first occurrence of a section
+    or key. The parser preserves duplicates verbatim (so the file round-trips)
+    and records each one in ``IniDocument.duplicates`` for the GUI to surface.
+    """
+
+    DUP_SECTION_INI = (
+        "[foo]\n"
+        "a=1\n"
+        "\n"
+        "[foo]\n"
+        "b=2\n"
+    )
+
+    DUP_KEY_INI = (
+        "[foo]\n"
+        "a=first\n"
+        "a=second\n"
+        "b=other\n"
+    )
+
+    def test_duplicate_section_preserved_as_separate_section(self):
+        doc = IniParser.parse_string(self.DUP_SECTION_INI)
+        foo_sections = [s for s in doc.sections if s.name == "foo"]
+        self.assertEqual(len(foo_sections), 2)
+        self.assertEqual([e.key for e in foo_sections[0].entries], ["a"])
+        self.assertEqual([e.key for e in foo_sections[1].entries], ["b"])
+
+    def test_duplicate_section_lookup_returns_first(self):
+        doc = IniParser.parse_string(self.DUP_SECTION_INI)
+        first = doc.get_section("foo")
+        self.assertIsNotNone(first)
+        self.assertEqual([e.key for e in first.entries], ["a"])
+        self.assertIsNone(first.get_entry("b"))
+
+    def test_duplicate_section_recorded(self):
+        doc = IniParser.parse_string(self.DUP_SECTION_INI)
+        section_dups = [d for d in doc.duplicates if d.kind == DuplicateKind.SECTION]
+        self.assertEqual(len(section_dups), 1)
+        self.assertEqual(section_dups[0].section, "foo")
+        self.assertEqual(section_dups[0].line, 4)
+
+    def test_duplicate_section_roundtrip(self):
+        doc = IniParser.parse_string(self.DUP_SECTION_INI)
+        rendered = doc.to_ini_string()
+        self.assertEqual(rendered.count("[foo]"), 2)
+        doc2 = IniParser.parse_string(rendered)
+        self.assertEqual(len([s for s in doc2.sections if s.name == "foo"]), 2)
+
+    def test_duplicate_key_preserved_in_order(self):
+        doc = IniParser.parse_string(self.DUP_KEY_INI)
+        foo = doc.get_section("foo")
+        keys_and_values = [(e.key, e.value) for e in foo.entries]
+        self.assertEqual(
+            keys_and_values, [("a", "first"), ("a", "second"), ("b", "other")]
+        )
+
+    def test_duplicate_key_lookup_returns_first(self):
+        doc = IniParser.parse_string(self.DUP_KEY_INI)
+        foo = doc.get_section("foo")
+        self.assertEqual(foo.get_entry("a").value, "first")
+
+    def test_duplicate_key_recorded(self):
+        doc = IniParser.parse_string(self.DUP_KEY_INI)
+        key_dups = [d for d in doc.duplicates if d.kind == DuplicateKind.KEY]
+        self.assertEqual(len(key_dups), 1)
+        self.assertEqual(key_dups[0].section, "foo")
+        self.assertEqual(key_dups[0].key, "a")
+        self.assertEqual(key_dups[0].line, 3)
+
+    def test_duplicate_key_roundtrip(self):
+        doc = IniParser.parse_string(self.DUP_KEY_INI)
+        rendered = doc.to_ini_string()
+        self.assertEqual(rendered.count("a = first"), 1)
+        self.assertEqual(rendered.count("a = second"), 1)
+        doc2 = IniParser.parse_string(rendered)
+        foo = doc2.get_section("foo")
+        self.assertEqual([e.value for e in foo.entries if e.key == "a"], ["first", "second"])
+
+    def test_no_duplicates_when_file_is_clean(self):
+        doc = IniParser.parse_string(SAMPLE_INI)
+        self.assertEqual(doc.duplicates, [])
+
+    def test_clone_copies_duplicates(self):
+        doc = IniParser.parse_string(self.DUP_KEY_INI)
+        clone = doc.clone()
+        self.assertEqual(len(clone.duplicates), len(doc.duplicates))
+        self.assertIsNot(clone.duplicates, doc.duplicates)
+        clone.duplicates.clear()
+        self.assertEqual(len(doc.duplicates), 1)
 
 
 if __name__ == "__main__":

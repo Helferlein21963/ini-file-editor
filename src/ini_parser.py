@@ -52,6 +52,38 @@ class ExportFormat(Enum):
     YAML = "yaml"
 
 
+class DuplicateKind(Enum):
+    """Kind of duplicate detected by :class:`IniParser`."""
+
+    SECTION = "section"
+    KEY = "key"
+
+
+@dataclass
+class DuplicateRecord:
+    """Record of a duplicate section header or key found during parsing.
+
+    The Win32 ``GetPrivateProfileString`` API only sees the first occurrence
+    of a section or key; later duplicates are unreachable. The parser
+    preserves them in the model so the source file round-trips byte-for-byte,
+    and emits one of these records per duplicate so the GUI can warn the user.
+
+    Attributes:
+        kind: Whether the duplicate is a section header or a key within a
+            section.
+        section: Name of the affected section.
+        key: Key name (only for :attr:`DuplicateKind.KEY`; ``None`` for
+            section duplicates).
+        line: 1-based line number in the source file where the duplicate
+            occurred.
+    """
+
+    kind: DuplicateKind
+    section: str
+    key: Optional[str] = None
+    line: int = 0
+
+
 @dataclass
 class IniEntry:
     """A single ``key = value`` pair with attached comments.
@@ -149,16 +181,25 @@ class IniDocument:
     Attributes:
         header_comments: Comment / blank lines at the very top of the file,
             before the first ``[section]``.
-        sections: Ordered list of :class:`IniSection` instances.
+        sections: Ordered list of :class:`IniSection` instances. Duplicate
+            section names are preserved as separate entries so the file
+            round-trips byte-for-byte; lookup helpers like
+            :meth:`get_section` always return the *first* match, matching
+            Win32 ``GetPrivateProfileString`` semantics.
         trailing_comments: Comment / blank lines after the final entry.
         source_path: Original path of the file the document was loaded from,
             or ``None`` for documents created in memory.
+        duplicates: Records of duplicate sections or duplicate keys observed
+            during parsing. Empty for documents constructed in memory or
+            files without duplicates. Used by the GUI to surface a warning;
+            consumers may ignore it.
     """
 
     header_comments: list[str] = field(default_factory=list)
     sections: list[IniSection] = field(default_factory=list)
     trailing_comments: list[str] = field(default_factory=list)
     source_path: Optional[Path] = field(default=None, repr=False)
+    duplicates: list[DuplicateRecord] = field(default_factory=list, repr=False)
 
     # ------------------------------------------------------------------ #
     # Lookup helpers
@@ -198,6 +239,10 @@ class IniDocument:
             source_path=self.source_path,
         )
         doc.sections = [s.clone() for s in self.sections]
+        doc.duplicates = [
+            DuplicateRecord(kind=d.kind, section=d.section, key=d.key, line=d.line)
+            for d in self.duplicates
+        ]
         return doc
 
     def merge_from(self, other: "IniDocument") -> None:
@@ -411,10 +456,18 @@ class IniParser:
         """Parse INI text into an :class:`IniDocument`.
 
         Comments accumulate in a pending buffer and are attached to the next
-        section or entry encountered. Duplicate section headers are merged
-        into the existing section. An inline comment is recognised only when
-        preceded by two or more spaces, so the equals-sign value text is
-        unambiguous.
+        section or entry encountered. An inline comment is recognised only
+        when preceded by two or more spaces, so the equals-sign value text
+        is unambiguous.
+
+        Duplicate section headers and duplicate keys within a section are
+        preserved verbatim in the model so the file round-trips byte-for-
+        byte. Each duplicate is also recorded in
+        :attr:`IniDocument.duplicates` so the GUI can warn the user. Lookup
+        helpers (:meth:`IniDocument.get_section`,
+        :meth:`IniSection.get_entry`) return the *first* match — matching
+        the Win32 ``GetPrivateProfileString`` semantics used by consumers
+        of these files.
 
         Args:
             text: Raw INI source. May use ``\\n`` or ``\\r\\n`` line endings.
@@ -428,16 +481,15 @@ class IniParser:
 
         pending_comments: list[str] = []
         current_section: Optional[IniSection] = None
+        seen_section_names: set[str] = set()
 
-        for raw in lines:
+        for line_idx, raw in enumerate(lines):
             line = raw.rstrip()
+            line_no = line_idx + 1
 
             # Empty line
             if not line.strip():
-                if current_section is None:
-                    pending_comments.append(line)
-                else:
-                    pending_comments.append(line)
+                pending_comments.append(line)
                 continue
 
             # Comment-only line
@@ -449,13 +501,13 @@ class IniParser:
             m = _SECTION_RE.match(line.strip())
             if m:
                 sec_name = m.group(1).strip()
-                existing = doc.get_section(sec_name)
-                if existing is not None:
-                    # Duplicate section: merge subsequent entries into the existing one
-                    existing.trailing_comments.extend(pending_comments)
-                    pending_comments = []
-                    current_section = existing
-                    continue
+                if sec_name in seen_section_names:
+                    doc.duplicates.append(DuplicateRecord(
+                        kind=DuplicateKind.SECTION,
+                        section=sec_name,
+                        line=line_no,
+                    ))
+                seen_section_names.add(sec_name)
                 sec = IniSection(name=sec_name, preceding_comments=pending_comments)
                 pending_comments = []
                 if current_section is None:
@@ -480,6 +532,13 @@ class IniParser:
                 else:
                     value = rest.strip()
                     inline_comment = ""
+                if any(e.key == key for e in current_section.entries):
+                    doc.duplicates.append(DuplicateRecord(
+                        kind=DuplicateKind.KEY,
+                        section=current_section.name,
+                        key=key,
+                        line=line_no,
+                    ))
                 entry = IniEntry(
                     key=key,
                     value=value,

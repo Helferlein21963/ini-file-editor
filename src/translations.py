@@ -129,6 +129,9 @@ TRANSLATIONS = {
         "diff_col_key": "Abschnitt / Schlüssel",
         "diff_only_diffs": "Nur Unterschiede zeigen",
         "diff_summary": "{modified} geändert · {added} hinzugefügt · {removed} entfernt · {unchanged} identisch",
+        "status_duplicates": "{count} Duplikat(e) erkannt — betroffene Zeilen sind in Vorschau und Strukturansicht hervorgehoben.",
+        "duplicate_tooltip": "Doppeltes Vorkommen — Win32-Anwendungen (GetPrivateProfileString) sehen nur den ersten Eintrag.",
+        "duplicate_winner_tooltip": "Wirksamer Eintrag — Win32-Anwendungen (GetPrivateProfileString) sehen genau diesen Eintrag, nicht die rot markierten Duplikate.",
     },
     Language.EN: {
         "app_name": "ini-file-editor",
@@ -237,6 +240,10 @@ TRANSLATIONS = {
         "diff_col_key": "Section / Key",
         "diff_only_diffs": "Show differences only",
         "diff_summary": "{modified} modified · {added} added · {removed} removed · {unchanged} identical",
+        "status_duplicates": "{count} duplicate(s) detected — affected lines are highlighted in the preview and structure view.",
+        "duplicate_tooltip": "Duplicate occurrence — Win32 applications (GetPrivateProfileString) only see the first entry.",
+        "duplicate_winner_tooltip": "Effective entry — Win32 applications (GetPrivateProfileString) see this entry, not the duplicates highlighted in red.",
+        "duplicate_winner_tooltip": "Effective entry — Win32 applications (GetPrivateProfileString) see this one, not the duplicates highlighted in red.",
     },
 }
 

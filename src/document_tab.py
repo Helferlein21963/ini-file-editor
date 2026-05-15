@@ -8,11 +8,15 @@ from __future__ import annotations
 
 from typing import Optional
 
+import re
+
 from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QBrush, QFont, QPalette
+from PyQt6.QtGui import (
+    QBrush, QColor, QFont, QPalette, QTextCharFormat, QTextCursor, QTextFormat,
+)
 from PyQt6.QtWidgets import (
     QAbstractItemView, QApplication, QFrame, QLabel, QPlainTextEdit,
-    QSplitter, QTabWidget, QTreeWidgetItem, QVBoxLayout, QWidget,
+    QSplitter, QTabWidget, QTextEdit, QTreeWidgetItem, QVBoxLayout, QWidget,
 )
 
 try:
@@ -51,6 +55,11 @@ class DocumentTab(QSplitter):
     """
 
     content_changed = pyqtSignal()
+
+    _DUPLICATE_BG = QColor("#5b3232")
+    _DUPLICATE_WINNER_BG = QColor("#5b5232")
+    _PREVIEW_SECTION_RE = re.compile(r"^\s*\[([^\]]+)\]\s*$")
+    _PREVIEW_KV_RE = re.compile(r"^\s*([^=;#]+?)\s*=")
 
     def __init__(
         self,
@@ -309,7 +318,77 @@ class DocumentTab(QSplitter):
         except Exception as exc:
             text = f"[Render error: {exc}]"
         self._preview_edit.setPlainText(text)
+        self._apply_duplicate_highlights()
         self._preview_edit.repaint()
+
+    def _apply_duplicate_highlights(self) -> None:
+        """Underlay duplicate section/key lines in the preview with a tint.
+
+        Highlighting is recomputed from the rendered text, not the parser's
+        ``doc.duplicates`` list, so it stays correct after in-memory edits.
+        Only the INI export format produces source-level lines worth marking;
+        JSON/XML/YAML use dicts and have no duplicates by definition.
+        """
+        if self._export_format != ExportFormat.INI:
+            self._preview_edit.setExtraSelections([])
+            return
+        text = self._preview_edit.document().toPlainText()
+
+        # Pass 1: collect line numbers grouped by section name and (section, key).
+        section_lines_by_name: dict[str, list[int]] = {}
+        entry_lines_by_section_key: dict[tuple[str, str], list[int]] = {}
+        current_section: Optional[str] = None
+        for line_no, line in enumerate(text.splitlines()):
+            m = self._PREVIEW_SECTION_RE.match(line)
+            if m:
+                sec_name = m.group(1).strip()
+                current_section = sec_name
+                section_lines_by_name.setdefault(sec_name, []).append(line_no)
+                continue
+            stripped = line.lstrip()
+            if not stripped or stripped[0] in ";#" or current_section is None:
+                continue
+            kv = self._PREVIEW_KV_RE.match(line)
+            if kv is None:
+                continue
+            key = kv.group(1).strip()
+            entry_lines_by_section_key.setdefault(
+                (current_section, key), []
+            ).append(line_no)
+
+        # Pass 2: for each name with 2+ occurrences, paint the first line
+        # yellow (the entry Win32 actually returns) and every subsequent line
+        # red (shadowed). Names that appear once get no highlight.
+        selections: list[QTextEdit.ExtraSelection] = []
+        for line_groups in (
+            section_lines_by_name.values(),
+            entry_lines_by_section_key.values(),
+        ):
+            for lines in line_groups:
+                if len(lines) < 2:
+                    continue
+                self._add_line_selection(selections, lines[0], self._DUPLICATE_WINNER_BG)
+                for line_no in lines[1:]:
+                    self._add_line_selection(selections, line_no, self._DUPLICATE_BG)
+        self._preview_edit.setExtraSelections(selections)
+
+    def _add_line_selection(
+        self,
+        selections: list[QTextEdit.ExtraSelection],
+        line_no: int,
+        color: QColor,
+    ) -> None:
+        block = self._preview_edit.document().findBlockByLineNumber(line_no)
+        if not block.isValid():
+            return
+        cursor = QTextCursor(block)
+        sel = QTextEdit.ExtraSelection()
+        sel.cursor = cursor
+        fmt = QTextCharFormat()
+        fmt.setBackground(color)
+        fmt.setProperty(QTextFormat.Property.FullWidthSelection, True)
+        sel.format = fmt
+        selections.append(sel)
 
     def _on_document_changed(self) -> None:
         self._dirty = True

@@ -64,7 +64,7 @@ All classes have `clone()` methods to enable non-destructive transformations. `I
 - Section headers: `^\[([^\]]+)\]`
 - Key-value pairs: `^([^=]+)=(.*)$`
 - Inline comments: `\s{2,}[;#]` — requires 2+ spaces to distinguish from value text
-- Duplicate section headers are merged into the existing section
+- **Duplicates** — duplicate section headers and duplicate keys within a section are preserved verbatim (separate `IniSection` / `IniEntry` instances) so the file round-trips byte-for-byte. Each duplicate is appended to `IniDocument.duplicates` as a `DuplicateRecord(kind, section, key, line)`. Lookup helpers (`IniDocument.get_section`, `IniSection.get_entry`, `set_entry`, `remove_entry`) return / mutate the **first** match — matching Win32 `GetPrivateProfileString` semantics, since these files are typically consumed by Win32 applications. The GUI surfaces a warning dialog on file load whenever `doc.duplicates` is non-empty.
 
 **Export** is dispatched via `IniDocument.export(ExportFormat)` to:
 - `to_ini_string()` — full round-trip reconstruction with all comment metadata

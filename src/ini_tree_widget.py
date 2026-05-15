@@ -11,7 +11,7 @@ from __future__ import annotations
 from typing import Optional
 
 from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QColor, QFont
+from PyQt6.QtGui import QBrush, QColor, QFont
 from PyQt6.QtWidgets import (
     QAbstractItemView, QDialog, QHeaderView, QMenu, QMessageBox,
     QTreeWidget, QTreeWidgetItem, QWidget,
@@ -46,6 +46,9 @@ class IniTreeWidget(QTreeWidget):
 
     document_changed = pyqtSignal()
     about_to_change = pyqtSignal()
+
+    _DUPLICATE_BG = QColor("#5b3232")
+    _DUPLICATE_WINNER_BG = QColor("#5b5232")
 
     def __init__(self, language: Language, parent: Optional[QWidget] = None) -> None:
         """Build the widget. Pass ``language`` for initial header labels."""
@@ -100,19 +103,86 @@ class IniTreeWidget(QTreeWidget):
         self.clear()
         if self._doc is None:
             return
+        winner_section_ids, dup_section_ids, winner_entry_ids, dup_entry_ids = (
+            self._collect_duplicate_ids()
+        )
         sections = list(self._doc.sections)
         if self._sort_mode in (SortMode.SECTIONS_ALPHA, SortMode.SECTIONS_AND_KEYS_ALPHA):
             sections = sorted(sections, key=lambda s: s.name.lower())
         for sec in sections:
             sec_item = QTreeWidgetItem(self)
             self._style_section_item(sec_item, sec)
+            if id(sec) in dup_section_ids:
+                self._mark_duplicate(sec_item)
+            elif id(sec) in winner_section_ids:
+                self._mark_winner(sec_item)
             entries = list(sec.entries)
             if self._sort_mode in (SortMode.KEYS_ALPHA, SortMode.SECTIONS_AND_KEYS_ALPHA):
                 entries = sorted(entries, key=lambda e: e.key.lower())
             for entry in entries:
                 entry_item = QTreeWidgetItem(sec_item)
                 self._style_entry_item(entry_item, entry)
+                if id(entry) in dup_entry_ids:
+                    self._mark_duplicate(entry_item)
+                elif id(entry) in winner_entry_ids:
+                    self._mark_winner(entry_item)
             sec_item.setExpanded(True)
+
+    def _collect_duplicate_ids(
+        self,
+    ) -> tuple[set[int], set[int], set[int], set[int]]:
+        """Return ``(winner_section_ids, dup_section_ids, winner_entry_ids,
+        dup_entry_ids)`` based on document order.
+
+        Object identity (``id()``) is used so the marker survives sorted
+        display: Python's ``sorted()`` is stable, so the document-order-first
+        instance of a duplicate name remains the first in the rendered tree.
+        For duplicate keys, all same-named sections share one key set —
+        Win32 does not see duplicate sections, so a key reachable only
+        through one is also "duplicate" from the lookup perspective.
+
+        ``winner_*`` is the *first* occurrence of any name that has 2+
+        occurrences (the entry Win32 actually returns); ``dup_*`` is every
+        later occurrence of the same name (shadowed). Items whose name is
+        unique appear in neither set.
+        """
+        winner_section_ids: set[int] = set()
+        dup_section_ids: set[int] = set()
+        winner_entry_ids: set[int] = set()
+        dup_entry_ids: set[int] = set()
+        if self._doc is None:
+            return winner_section_ids, dup_section_ids, winner_entry_ids, dup_entry_ids
+
+        section_ids_by_name: dict[str, list[int]] = {}
+        entry_ids_by_section_key: dict[tuple[str, str], list[int]] = {}
+        for sec in self._doc.sections:
+            section_ids_by_name.setdefault(sec.name, []).append(id(sec))
+            for entry in sec.entries:
+                entry_ids_by_section_key.setdefault(
+                    (sec.name, entry.key), []
+                ).append(id(entry))
+
+        for ids in section_ids_by_name.values():
+            if len(ids) >= 2:
+                winner_section_ids.add(ids[0])
+                dup_section_ids.update(ids[1:])
+        for ids in entry_ids_by_section_key.values():
+            if len(ids) >= 2:
+                winner_entry_ids.add(ids[0])
+                dup_entry_ids.update(ids[1:])
+        return winner_section_ids, dup_section_ids, winner_entry_ids, dup_entry_ids
+
+    def _mark_duplicate(self, item: QTreeWidgetItem) -> None:
+        self._tint_item(item, self._DUPLICATE_BG, self._t("duplicate_tooltip"))
+
+    def _mark_winner(self, item: QTreeWidgetItem) -> None:
+        self._tint_item(item, self._DUPLICATE_WINNER_BG, self._t("duplicate_winner_tooltip"))
+
+    def _tint_item(self, item: QTreeWidgetItem, color: QColor, tooltip: str) -> None:
+        brush = QBrush(color)
+        for c in range(self.columnCount()):
+            item.setBackground(c, brush)
+            item.setToolTip(c, tooltip)
 
     def _style_section_item(self, item: QTreeWidgetItem, sec: IniSection) -> None:
         item.setText(0, f"[{sec.name}]")

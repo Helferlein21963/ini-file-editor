@@ -39,6 +39,10 @@ mypy src/
 # Build standalone EXE
 python -m pyinstaller ini-file-editor.spec
 
+# Build PDF user manuals from docs/manuals/*.md  (requires xhtml2pdf, Markdown)
+python scripts/build_manuals_pdf.py              # writes to docs/manuals/
+python scripts/build_manuals_pdf.py <out_dir>    # writes to <out_dir>
+
 # Build API documentation (Sphinx + Furo theme, Google-style docstrings)
 sphinx-build -b html docs docs/_build/html        # one-shot HTML build
 sphinx-build -b markdown docs docs/_build/markdown # Markdown for Azure DevOps Wiki
@@ -65,6 +69,7 @@ All classes have `clone()` methods to enable non-destructive transformations. `I
 - Key-value pairs: `^([^=]+)=(.*)$`
 - Inline comments: `\s{2,}[;#]` — requires 2+ spaces to distinguish from value text
 - **Duplicates** — duplicate section headers and duplicate keys within a section are preserved verbatim (separate `IniSection` / `IniEntry` instances) so the file round-trips byte-for-byte. Each duplicate is appended to `IniDocument.duplicates` as a `DuplicateRecord(kind, section, key, line)`. Lookup helpers (`IniDocument.get_section`, `IniSection.get_entry`, `set_entry`, `remove_entry`) return / mutate the **first** match — matching Win32 `GetPrivateProfileString` semantics, since these files are typically consumed by Win32 applications. The GUI surfaces a warning dialog on file load whenever `doc.duplicates` is non-empty.
+- **Progress callback** — `IniParser.parse_file()` and `parse_string()` accept an optional `progress_callback: ProgressCallback` (`Callable[[int, int], None]`), called as `(current_line, total_lines)` roughly 100 times during parsing. Used by the GUI to drive a progress bar for large files.
 
 **Export** is dispatched via `IniDocument.export(ExportFormat)` to:
 - `to_ini_string()` — full round-trip reconstruction with all comment metadata
@@ -73,6 +78,13 @@ All classes have `clone()` methods to enable non-destructive transformations. `I
 - `to_yaml_string()` — requires PyYAML (optional; GUI degrades gracefully if missing)
 
 Round-trip guarantee: parse → serialize → re-parse produces an identical document.
+
+### 2a. Compare / Diff Engine (`src/ini_diff.py`, `src/diff_tab.py`)
+
+**`IniDiff.compare(doc_a, doc_b)`** produces a `DocumentDiff` (list of `SectionDiff` → list of `EntryDiff`).
+
+- **`DuplicateRole`** enum (`NONE` / `WINNER` / `SHADOWED`) — attached to every `SectionDiff` and `EntryDiff`. `WINNER` marks the first occurrence (the one Win32 actually sees); `SHADOWED` marks every subsequent duplicate. The compare view uses this to color-code entries beyond pure add/remove/modify status.
+- **`DiffTab`** — 5-column tree (`[section]`, value A, value B, status symbol, Win32 role). When a sort mode is active, the merged diff is post-sorted so A-only and B-only rows interleave alphabetically rather than being concatenated at the end.
 
 ### 3. GUI Layer (`src/main_window.py`)
 
@@ -95,6 +107,7 @@ Sphinx-based API documentation generated from Google-style docstrings.
 - **`docs/index.rst`** — entry page with toctree to `api/*.rst` and `architecture.rst`
 - **`docs/api/`** — one `.rst` per module: `ini_parser`, `ini_diff`, `translations`, `gui` (aggregates all PyQt6 modules)
 - **`docs/Makefile` / `docs/make.bat`** — targets `html`, `markdown`, `clean`
+- **`docs/manuals/`** — bilingual user manuals (`manual-de.md`, `manual-en.md`). PDFs are generated via `scripts/build_manuals_pdf.py` (requires `xhtml2pdf` and `Markdown`); the PDFs are published as the `manuals-pdf` CI artifact.
 
 Build is wired into [azure-pipelines.yml](azure-pipelines.yml) as a `Docs` stage that runs in parallel with `Build`: publishes HTML as the `docs-html` pipeline artifact and pushes Markdown to the project's Azure DevOps Wiki (`wikiMaster` branch, `API/` folder). Wiki push is `continueOnError: true` so missing wiki setup never breaks CI.
 
@@ -105,6 +118,7 @@ Build is wired into [azure-pipelines.yml](azure-pipelines.yml) as a `Docs` stage
 - **`SortMode` / `ExportFormat` enums** — used throughout; avoid raw string comparisons
 - **`main.py` sys.path manipulation** — supports running from repo root, src dir, and PyInstaller bundles; do not remove
 - **Google-style docstrings** — all new public classes / methods get them so Sphinx `autodoc` + `napoleon` picks them up. Use `Signals:` (custom section, configured in `conf.py`) to document PyQt signals on widgets.
+- **`ProductVersion` = commit hash** — `scripts/generate_version_info.py` embeds the short Git commit hash (`git rev-parse --short HEAD`) in the Windows `ProductVersion` string resource. Falls back to `"unknown"` if git is unavailable. The `FileVersion` field stays as `major.minor.patch`.
 
 ## Adding a New Export Format
 

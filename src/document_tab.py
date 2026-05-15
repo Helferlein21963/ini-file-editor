@@ -410,6 +410,13 @@ class DocumentTab(QSplitter):
     def _on_preview_scrolled(self) -> None:
         if self._syncing or self._export_format != ExportFormat.INI or self._doc is None:
             return
+        preview_sb = self._preview_edit.verticalScrollBar()
+        if preview_sb.value() == preview_sb.maximum():
+            self._syncing = True
+            tree_sb = self._tree.verticalScrollBar()
+            tree_sb.setValue(tree_sb.maximum())
+            self._syncing = False
+            return
         line_no = self._preview_edit.firstVisibleBlock().blockNumber()
         lines = self._preview_edit.document().toPlainText().splitlines()
         current_section_name: Optional[str] = None
@@ -477,6 +484,13 @@ class DocumentTab(QSplitter):
 
     def _on_tree_scrolled(self) -> None:
         if self._syncing or self._export_format != ExportFormat.INI or self._doc is None:
+            return
+        tree_sb = self._tree.verticalScrollBar()
+        if tree_sb.value() == tree_sb.maximum():
+            self._syncing = True
+            preview_sb = self._preview_edit.verticalScrollBar()
+            preview_sb.setValue(preview_sb.maximum())
+            self._syncing = False
             return
         item = self._tree.itemAt(0, 0)
         if item is None:

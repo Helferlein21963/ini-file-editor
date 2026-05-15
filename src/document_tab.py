@@ -60,6 +60,12 @@ class DocumentTab(QSplitter):
     _DUPLICATE_WINNER_BG = QColor("#5b5232")
     _PREVIEW_SECTION_RE = re.compile(r"^\s*\[([^\]]+)\]\s*$")
     _PREVIEW_KV_RE = re.compile(r"^\s*([^=;#]+?)\s*=")
+    _JSON_SECTION_RE = re.compile(r'^  "([^"]+)":\s*\{')
+    _JSON_KEY_RE = re.compile(r'^    "([^"]+)":')
+    _XML_SECTION_RE = re.compile(r'<section\s+name="([^"]+)"')
+    _XML_KEY_RE = re.compile(r'<entry\s+key="([^"]+)"')
+    _YAML_SECTION_RE = re.compile(r"^(?:'([^']+)'|\"([^\"]+)\"|(\S[^:]*)):")
+    _YAML_KEY_RE = re.compile(r"^  (?:'([^']+)'|\"([^\"]+)\"|(\S[^:]*)):")
 
     def __init__(
         self,
@@ -165,6 +171,7 @@ class DocumentTab(QSplitter):
 
     def set_export_format(self, fmt: ExportFormat) -> None:
         self._export_format = fmt
+        self._last_synced_section = None
         if self._doc is not None:
             self._refresh_preview()
 
@@ -408,7 +415,7 @@ class DocumentTab(QSplitter):
         self.content_changed.emit()
 
     def _on_preview_scrolled(self) -> None:
-        if self._syncing or self._export_format != ExportFormat.INI or self._doc is None:
+        if self._syncing or self._doc is None:
             return
         preview_sb = self._preview_edit.verticalScrollBar()
         if preview_sb.value() == preview_sb.maximum():
@@ -417,14 +424,7 @@ class DocumentTab(QSplitter):
             tree_sb.setValue(tree_sb.maximum())
             self._syncing = False
             return
-        line_no = self._preview_edit.firstVisibleBlock().blockNumber()
-        lines = self._preview_edit.document().toPlainText().splitlines()
-        current_section_name: Optional[str] = None
-        for i in range(min(line_no, len(lines) - 1), -1, -1):
-            stripped = lines[i].strip()
-            if stripped.startswith("[") and "]" in stripped:
-                current_section_name = stripped[1 : stripped.index("]")]
-                break
+        current_section_name = self._section_at_preview_top()
         if current_section_name is None or current_section_name == self._last_synced_section:
             return
         self._last_synced_section = current_section_name
@@ -436,6 +436,100 @@ class DocumentTab(QSplitter):
                 self._tree.scrollToItem(sec_item, QAbstractItemView.ScrollHint.PositionAtTop)
                 self._syncing = False
                 break
+
+    def _section_at_preview_top(self) -> Optional[str]:
+        """Return the name of the section currently visible at the top of the preview."""
+        line_no = self._preview_edit.firstVisibleBlock().blockNumber()
+        lines = self._preview_edit.document().toPlainText().splitlines()
+        fmt = self._export_format
+        for i in range(min(line_no, len(lines) - 1), -1, -1):
+            line = lines[i]
+            if fmt == ExportFormat.INI:
+                stripped = line.strip()
+                if stripped.startswith("[") and "]" in stripped:
+                    return stripped[1 : stripped.index("]")]
+            elif fmt == ExportFormat.JSON:
+                m = self._JSON_SECTION_RE.match(line)
+                if m:
+                    return m.group(1)
+            elif fmt == ExportFormat.XML:
+                m = self._XML_SECTION_RE.search(line)
+                if m:
+                    return m.group(1)
+            elif fmt == ExportFormat.YAML:
+                m = self._YAML_SECTION_RE.match(line)
+                if m:
+                    return next(g for g in m.groups() if g is not None)
+        return None
+
+    def _find_in_preview(self, section_name: str, key: Optional[str]) -> Optional[int]:
+        """Find the line number of ``section_name`` (or ``key`` inside it) in the preview."""
+        lines = self._preview_edit.document().toPlainText().splitlines()
+        fmt = self._export_format
+        in_section = False
+        for i, line in enumerate(lines):
+            if fmt == ExportFormat.INI:
+                stripped = line.strip()
+                if stripped.startswith("[") and "]" in stripped:
+                    name = stripped[1 : stripped.index("]")]
+                    if name == section_name:
+                        if key is None:
+                            return i
+                        in_section = True
+                    else:
+                        in_section = False
+                elif (
+                    in_section
+                    and key is not None
+                    and "=" in stripped
+                    and not stripped.startswith(";")
+                    and not stripped.startswith("#")
+                    and stripped.split("=", 1)[0].strip() == key
+                ):
+                    return i
+            elif fmt == ExportFormat.JSON:
+                m = self._JSON_SECTION_RE.match(line)
+                if m:
+                    if m.group(1) == section_name:
+                        if key is None:
+                            return i
+                        in_section = True
+                    else:
+                        in_section = False
+                elif in_section and key is not None:
+                    m2 = self._JSON_KEY_RE.match(line)
+                    if m2 and m2.group(1) == key:
+                        return i
+            elif fmt == ExportFormat.XML:
+                m = self._XML_SECTION_RE.search(line)
+                if m:
+                    if m.group(1) == section_name:
+                        if key is None:
+                            return i
+                        in_section = True
+                    else:
+                        in_section = False
+                elif in_section and key is not None:
+                    m2 = self._XML_KEY_RE.search(line)
+                    if m2 and m2.group(1) == key:
+                        return i
+            elif fmt == ExportFormat.YAML:
+                m = self._YAML_SECTION_RE.match(line)
+                if m:
+                    name = next(g for g in m.groups() if g is not None)
+                    if name == section_name:
+                        if key is None:
+                            return i
+                        in_section = True
+                    else:
+                        in_section = False
+                elif in_section and key is not None:
+                    m2 = self._YAML_KEY_RE.match(line)
+                    if m2:
+                        kname = next(g for g in m2.groups() if g is not None)
+                        if kname == key:
+                            return i
+        return None
 
     def _scroll_preview_to_item(self, item: QTreeWidgetItem) -> None:
         data = item.data(0, Qt.ItemDataRole.UserRole)
@@ -455,26 +549,7 @@ class DocumentTab(QSplitter):
             key = data.key
         else:
             return
-        lines = self._preview_edit.document().toPlainText().splitlines()
-        target_line: Optional[int] = None
-        current_section: Optional[str] = None
-        for i, line in enumerate(lines):
-            stripped = line.strip()
-            if stripped.startswith("[") and "]" in stripped:
-                current_section = stripped[1 : stripped.index("]")]
-                if current_section == section_name and key is None:
-                    target_line = i
-                    break
-            elif (
-                current_section == section_name
-                and key is not None
-                and "=" in stripped
-                and not stripped.startswith(";")
-                and not stripped.startswith("#")
-            ):
-                if stripped.split("=", 1)[0].strip() == key:
-                    target_line = i
-                    break
+        target_line = self._find_in_preview(section_name, key)
         if target_line is None:
             return
         self._syncing = True
@@ -483,7 +558,7 @@ class DocumentTab(QSplitter):
         self._syncing = False
 
     def _on_tree_scrolled(self) -> None:
-        if self._syncing or self._export_format != ExportFormat.INI or self._doc is None:
+        if self._syncing or self._doc is None:
             return
         tree_sb = self._tree.verticalScrollBar()
         if tree_sb.value() == tree_sb.maximum():
@@ -500,6 +575,6 @@ class DocumentTab(QSplitter):
     def _on_tree_current_changed(
         self, item: Optional[QTreeWidgetItem], _: Optional[QTreeWidgetItem]
     ) -> None:
-        if self._syncing or self._export_format != ExportFormat.INI or item is None or self._doc is None:
+        if self._syncing or item is None or self._doc is None:
             return
         self._scroll_preview_to_item(item)

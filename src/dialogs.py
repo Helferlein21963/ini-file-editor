@@ -50,7 +50,7 @@ class EntryEditDialog(QDialog):
         self._value_edit = QLineEdit(entry.value)
         self._inline_edit = QLineEdit(entry.inline_comment)
         self._comments_edit = QPlainTextEdit("\n".join(entry.preceding_comments))
-        self._comments_edit.setMaximumHeight(100)
+        self._comments_edit.setMinimumHeight(100)
 
         form.addRow(translate(language, "entry_key"), self._key_edit)
         form.addRow(translate(language, "entry_value"), self._value_edit)
@@ -94,9 +94,9 @@ class SectionEditDialog(QDialog):
 
         self._name_edit = QLineEdit(section.name)
         self._pre_edit = QPlainTextEdit("\n".join(section.preceding_comments))
-        self._pre_edit.setMaximumHeight(90)
+        self._pre_edit.setMinimumHeight(90)
         self._trail_edit = QPlainTextEdit("\n".join(section.trailing_comments))
-        self._trail_edit.setMaximumHeight(90)
+        self._trail_edit.setMinimumHeight(90)
 
         form.addRow(translate(language, "section_name"), self._name_edit)
         form.addRow(translate(language, "section_pre_comments"), self._pre_edit)

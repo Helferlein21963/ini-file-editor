@@ -324,8 +324,20 @@ class DocumentTab(QSplitter):
             text = doc.export(self._export_format)
         except Exception as exc:
             text = f"[Render error: {exc}]"
-        self._preview_edit.setPlainText(text)
-        self._apply_duplicate_highlights()
+        # setPlainText resets the scrollbar to 0 and can transiently report
+        # value == maximum (both 0 before layout), which would trigger the
+        # scroll-sync to send the tree to its bottom. Suppress sync, replace
+        # the text, then restore the user's vertical position.
+        preview_sb = self._preview_edit.verticalScrollBar()
+        saved_scroll = preview_sb.value()
+        was_syncing = self._syncing
+        self._syncing = True
+        try:
+            self._preview_edit.setPlainText(text)
+            self._apply_duplicate_highlights()
+            preview_sb.setValue(min(saved_scroll, preview_sb.maximum()))
+        finally:
+            self._syncing = was_syncing
         self._preview_edit.repaint()
 
     def _apply_duplicate_highlights(self) -> None:

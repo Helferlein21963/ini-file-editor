@@ -8,11 +8,12 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Optional
 
+from PyQt6 import sip
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QBrush, QColor, QFont
+from PyQt6.QtGui import QBrush, QColor, QFont, QPalette
 from PyQt6.QtWidgets import (
-    QAbstractItemView, QCheckBox, QComboBox, QHBoxLayout, QHeaderView,
-    QLabel, QLineEdit, QPushButton, QTreeWidget, QTreeWidgetItem,
+    QAbstractItemView, QApplication, QCheckBox, QComboBox, QHBoxLayout,
+    QHeaderView, QLabel, QLineEdit, QPushButton, QTreeWidget, QTreeWidgetItem,
     QVBoxLayout, QWidget,
 )
 
@@ -74,6 +75,8 @@ class DiffTab(QWidget):
         self._sort_mode = SortMode.NONE
         self._find_matches: list[QTreeWidgetItem] = []
         self._find_idx = -1
+        self._find_highlighted_item: Optional[QTreeWidgetItem] = None
+        self._find_highlighted_brushes: list[QBrush] = []
         self._build_widgets()
         self._tab_a.content_changed.connect(self.refresh)
         self._tab_b.content_changed.connect(self.refresh)
@@ -247,6 +250,7 @@ class DiffTab(QWidget):
             for sec in diff.sections:
                 sec.entries.sort(key=lambda e: e.key.lower())
         self._refresh_static_labels()
+        self._clear_find_highlight()
         self._tree.clear()
         self._find_matches = []
         self._find_idx = -1
@@ -295,9 +299,30 @@ class DiffTab(QWidget):
         self.refresh()
 
     def _reset_find(self) -> None:
+        self._clear_find_highlight()
         self._find_matches = []
         self._find_idx = -1
         self._find_status.setText("")
+
+    def _clear_find_highlight(self) -> None:
+        item = self._find_highlighted_item
+        if item is None:
+            return
+        if not sip.isdeleted(item):
+            for c, brush in enumerate(self._find_highlighted_brushes):
+                item.setBackground(c, brush)
+        self._find_highlighted_item = None
+        self._find_highlighted_brushes = []
+
+    def _apply_find_highlight(self, item: QTreeWidgetItem) -> None:
+        col_count = self._tree.columnCount()
+        self._find_highlighted_brushes = [item.background(c) for c in range(col_count)]
+        self._find_highlighted_item = item
+        palette = QApplication.palette()
+        color = palette.color(QPalette.ColorGroup.Active, QPalette.ColorRole.Highlight)
+        brush = QBrush(color)
+        for c in range(col_count):
+            item.setBackground(c, brush)
 
     def _collect_all_items(self) -> list[QTreeWidgetItem]:
         items: list[QTreeWidgetItem] = []
@@ -331,7 +356,8 @@ class DiffTab(QWidget):
 
         self._find_idx = (self._find_idx + (1 if forward else -1)) % len(self._find_matches)
         item = self._find_matches[self._find_idx]
-        self._tree.setCurrentItem(item)
+        self._clear_find_highlight()
+        self._apply_find_highlight(item)
         self._tree.scrollToItem(item, QAbstractItemView.ScrollHint.PositionAtTop)
         total = len(self._find_matches)
         self._find_status.setText(

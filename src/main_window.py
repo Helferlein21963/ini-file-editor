@@ -211,7 +211,7 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(self._t("status_ready"))
         self.setAcceptDrops(True)
 
-    def _t(self, key: str, **kwargs: object) -> str:
+    def _t(self, key: str, /, **kwargs: object) -> str:
         return translate(self._language, key, **kwargs)
 
     def _current_tab(self) -> Optional[DocumentTab]:
@@ -301,6 +301,7 @@ class MainWindow(QMainWindow):
             self._format_combo.blockSignals(False)
             self._update_selection_actions(tab.tree.current_selection_kind())
         else:
+            self._find_bar.hide()
             self._update_selection_actions("no_doc")
         self._update_window_title()
 
@@ -1155,7 +1156,7 @@ class MainWindow(QMainWindow):
         if not found_cursor.isNull():
             text_edit.setTextCursor(found_cursor)
             tab = self._current_tab()
-            if tab is not None and text_edit is tab.preview_edit and tab.export_format == ExportFormat.INI:
+            if tab is not None and text_edit is tab.preview_edit:
                 tab.sync_tree_to_preview_match(found_cursor)
             return self._count_all_in_text_edit(text_edit, search_text, case_sensitive, whole_words)
         return 0

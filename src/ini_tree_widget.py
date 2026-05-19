@@ -81,7 +81,7 @@ class IniTreeWidget(QTreeWidget):
         self._language = language
         self._refresh_header_labels()
 
-    def _t(self, key: str, **kwargs: object) -> str:
+    def _t(self, key: str, /, **kwargs: object) -> str:
         return translate(self._language, key, **kwargs)
 
     def _refresh_header_labels(self) -> None:

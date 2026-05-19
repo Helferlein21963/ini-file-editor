@@ -10,6 +10,7 @@ from typing import Optional
 
 import re
 
+from PyQt6 import sip
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import (
     QBrush, QColor, QFont, QPalette, QTextCharFormat, QTextCursor, QTextFormat,
@@ -264,33 +265,19 @@ class DocumentTab(QSplitter):
         line_no = cursor.blockNumber()
         lines = self._preview_edit.document().toPlainText().splitlines()
 
-        current_section_name: Optional[str] = None
-        matched_key: Optional[str] = None
-
-        for i, line in enumerate(lines[: line_no + 1]):
-            stripped = line.strip()
-            if stripped.startswith("[") and "]" in stripped:
-                current_section_name = stripped[1 : stripped.index("]")]
-                if i == line_no:
-                    matched_key = None
-            elif (
-                "=" in stripped
-                and not stripped.startswith(";")
-                and not stripped.startswith("#")
-                and i == line_no
-            ):
-                matched_key = stripped.split("=", 1)[0].strip()
-
-        if current_section_name is None:
+        located = self._locate_in_preview(lines, line_no)
+        if located is None:
             return
+        current_section_name, matched_key = located
 
         palette = QApplication.palette()
         highlight = palette.color(QPalette.ColorGroup.Active, QPalette.ColorRole.Highlight)
         col_count = self._tree.columnCount()
 
         if self._last_tree_match is not None:
-            for c in range(col_count):
-                self._last_tree_match.setBackground(c, QBrush())
+            if not sip.isdeleted(self._last_tree_match):
+                for c in range(col_count):
+                    self._last_tree_match.setBackground(c, QBrush())
             self._last_tree_match = None
 
         match_item: Optional[QTreeWidgetItem] = None
@@ -315,6 +302,112 @@ class DocumentTab(QSplitter):
                 match_item.setBackground(c, QBrush(highlight))
             self._tree.scrollToItem(match_item)
             self._last_tree_match = match_item
+
+    _JSON_SECTION_RE = re.compile(r'^\s+"([^"]+)"\s*:\s*\{')
+    _JSON_ENTRY_RE = re.compile(r'^\s+"([^"]+)"\s*:\s*(?!\{)')
+    _JSON_SECTION_CLOSE_RE = re.compile(r'^\s+\}')
+    _XML_SECTION_RE = re.compile(r'<section\s+[^>]*name="([^"]+)"')
+    _XML_ENTRY_RE = re.compile(r'<entry\s+[^>]*key="([^"]+)"')
+    _XML_SECTION_CLOSE_RE = re.compile(r'</section\s*>')
+    _YAML_SECTION_RE = re.compile(r'^(["\']?)([^\s"\'][^:]*?)\1\s*:')
+    _YAML_ENTRY_RE = re.compile(r'^\s+(["\']?)([^\s"\'][^:]*?)\1\s*:')
+
+    def _locate_in_preview(
+        self, lines: list[str], line_no: int,
+    ) -> Optional[tuple[str, Optional[str]]]:
+        fmt = self._export_format
+        if fmt == ExportFormat.INI:
+            return self._locate_in_ini(lines, line_no)
+        if fmt == ExportFormat.JSON:
+            return self._locate_in_json(lines, line_no)
+        if fmt == ExportFormat.XML:
+            return self._locate_in_xml(lines, line_no)
+        if fmt == ExportFormat.YAML:
+            return self._locate_in_yaml(lines, line_no)
+        return None
+
+    def _locate_in_ini(
+        self, lines: list[str], line_no: int,
+    ) -> Optional[tuple[str, Optional[str]]]:
+        section: Optional[str] = None
+        matched_key: Optional[str] = None
+        for i, line in enumerate(lines[: line_no + 1]):
+            stripped = line.strip()
+            if stripped.startswith("[") and "]" in stripped:
+                section = stripped[1 : stripped.index("]")]
+                if i == line_no:
+                    matched_key = None
+            elif (
+                "=" in stripped
+                and not stripped.startswith(";")
+                and not stripped.startswith("#")
+                and i == line_no
+            ):
+                matched_key = stripped.split("=", 1)[0].strip()
+        return (section, matched_key) if section is not None else None
+
+    def _locate_in_json(
+        self, lines: list[str], line_no: int,
+    ) -> Optional[tuple[str, Optional[str]]]:
+        section: Optional[str] = None
+        matched_key: Optional[str] = None
+        for i, line in enumerate(lines[: line_no + 1]):
+            m = self._JSON_SECTION_RE.match(line)
+            if m:
+                section = m.group(1)
+                if i == line_no:
+                    matched_key = None
+                continue
+            if i == line_no:
+                m = self._JSON_ENTRY_RE.match(line)
+                if m:
+                    matched_key = m.group(1)
+                continue
+            if self._JSON_SECTION_CLOSE_RE.match(line):
+                section = None
+        return (section, matched_key) if section is not None else None
+
+    def _locate_in_xml(
+        self, lines: list[str], line_no: int,
+    ) -> Optional[tuple[str, Optional[str]]]:
+        section: Optional[str] = None
+        matched_key: Optional[str] = None
+        for i, line in enumerate(lines[: line_no + 1]):
+            m = self._XML_SECTION_RE.search(line)
+            if m:
+                section = m.group(1)
+                if i == line_no:
+                    matched_key = None
+                continue
+            if i == line_no:
+                m = self._XML_ENTRY_RE.search(line)
+                if m:
+                    matched_key = m.group(1)
+                continue
+            if self._XML_SECTION_CLOSE_RE.search(line):
+                section = None
+        return (section, matched_key) if section is not None else None
+
+    def _locate_in_yaml(
+        self, lines: list[str], line_no: int,
+    ) -> Optional[tuple[str, Optional[str]]]:
+        section: Optional[str] = None
+        matched_key: Optional[str] = None
+        for i, line in enumerate(lines[: line_no + 1]):
+            if not line.strip():
+                continue
+            if line[0] not in (" ", "\t"):
+                m = self._YAML_SECTION_RE.match(line)
+                if m:
+                    section = m.group(2).strip()
+                    if i == line_no:
+                        matched_key = None
+            else:
+                if i == line_no:
+                    m = self._YAML_ENTRY_RE.match(line)
+                    if m:
+                        matched_key = m.group(2).strip()
+        return (section, matched_key) if section is not None else None
 
     def _refresh_preview(self) -> None:
         if self._doc is None:

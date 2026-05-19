@@ -250,7 +250,7 @@ TRANSLATIONS = {
 }
 
 
-def translate(lang: Language, key: str, **kwargs: object) -> str:
+def translate(lang: Language, key: str, /, **kwargs: object) -> str:
     """Look up ``key`` in the table for ``lang`` and format it.
 
     Args:

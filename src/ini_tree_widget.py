@@ -57,6 +57,19 @@ class IniTreeWidget(QTreeWidget):
     # so a subtle tint helps the duplicates stand out at a glance.
     _ROLE_BG_WINNER   = QColor("#5b5232")
     _ROLE_BG_SHADOWED = QColor("#5b3232")
+    # Background tint for rows added by a merge that the user has not saved yet.
+    _MERGED_BG = QColor("#325b32")
+    # Upper bound for auto-sized columns when the viewport width isn't known
+    # yet (e.g. very first file load before the window is shown). Once the
+    # viewport is laid out, :meth:`auto_size_columns` uses a viewport-relative
+    # budget that keeps the comment column visible.
+    _AUTO_COLUMN_MAX_WIDTH = 250
+    # Minimum pixel width per auto-sized column.
+    _AUTO_COLUMN_MIN_WIDTH = 80
+    # Minimum share of the viewport reserved for the (stretching) comment
+    # column, so long values cannot push comments off-screen.
+    _COMMENT_MIN_FRACTION = 0.30
+    _COMMENT_MIN_WIDTH = 180
 
     def __init__(self, language: Language, parent: Optional[QWidget] = None) -> None:
         """Build the widget. Pass ``language`` for initial header labels."""
@@ -64,10 +77,15 @@ class IniTreeWidget(QTreeWidget):
         self._language = language
         self.setColumnCount(4)
         self._refresh_header_labels()
+        # Columns 0 (section/key) and 1 (value) are user-resizable. Column 2
+        # (comment) stretches to fill the remaining space so the boundary
+        # between value and comment is draggable too. Column 3 (Win32 role
+        # marker) hugs its single-character symbol.
         self.header().setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)
-        self.header().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-        self.header().setSectionResizeMode(2, QHeaderView.ResizeMode.Interactive)
+        self.header().setSectionResizeMode(1, QHeaderView.ResizeMode.Interactive)
+        self.header().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
         self.header().setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
+        self.header().setStretchLastSection(False)
         self.setAlternatingRowColors(True)
         self.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
@@ -76,6 +94,10 @@ class IniTreeWidget(QTreeWidget):
         self.itemSelectionChanged.connect(self._emit_selection_kind)
         self._doc: Optional[IniDocument] = None
         self._sort_mode = SortMode.NONE
+        # Object ids of sections / entries added by an unsaved merge. The
+        # tree paints these rows green until the document is saved.
+        self._merged_section_ids: set[int] = set()
+        self._merged_entry_ids: set[int] = set()
 
     def set_language(self, language: Language) -> None:
         self._language = language
@@ -111,6 +133,69 @@ class IniTreeWidget(QTreeWidget):
         self._sort_mode = mode
         self._refresh()
 
+    def auto_size_columns(self) -> None:
+        """Size the section/key and value columns to their current content.
+
+        Called by :class:`~document_tab.DocumentTab` after the initial file
+        load so the user doesn't have to drag the splitters every time.
+
+        The section/key column gets capped at :attr:`_AUTO_COLUMN_MAX_WIDTH`;
+        the value column is additionally capped so the stretching comment
+        column keeps at least :attr:`_COMMENT_MIN_FRACTION` of the viewport
+        — long values would otherwise push the comments off-screen.
+        """
+        for c in (0, 1):
+            self.resizeColumnToContents(c)
+
+        # Cap the section/key column at an absolute limit; it's usually
+        # short, so most files won't hit this.
+        if self.columnWidth(0) > self._AUTO_COLUMN_MAX_WIDTH:
+            self.setColumnWidth(0, self._AUTO_COLUMN_MAX_WIDTH)
+
+        viewport_w = self.viewport().width()
+        if viewport_w <= 0:
+            # Widget not laid out yet — fall back to the conservative
+            # absolute cap. The deferred call from DocumentTab usually
+            # avoids this branch.
+            if self.columnWidth(1) > self._AUTO_COLUMN_MAX_WIDTH:
+                self.setColumnWidth(1, self._AUTO_COLUMN_MAX_WIDTH)
+            return
+
+        # Reserve a share of the viewport for the comment column and give
+        # the value column whatever is left, clamped to a sensible range.
+        role_w = self.columnWidth(3)
+        reserved_for_comment = max(
+            self._COMMENT_MIN_WIDTH, int(viewport_w * self._COMMENT_MIN_FRACTION)
+        )
+        budget_for_value = viewport_w - self.columnWidth(0) - role_w - reserved_for_comment
+        if budget_for_value < self._AUTO_COLUMN_MIN_WIDTH:
+            budget_for_value = self._AUTO_COLUMN_MIN_WIDTH
+        if self.columnWidth(1) > budget_for_value:
+            self.setColumnWidth(1, budget_for_value)
+
+    def add_merge_highlights(
+        self, section_ids: set[int], entry_ids: set[int],
+    ) -> None:
+        """Mark these section / entry object ids as freshly merged.
+
+        Rows whose ``id()`` is in either set are painted green on the next
+        refresh and stay that way until :meth:`clear_merge_highlights` is
+        called (typically when the document is saved).
+        """
+        if not section_ids and not entry_ids:
+            return
+        self._merged_section_ids.update(section_ids)
+        self._merged_entry_ids.update(entry_ids)
+        self._refresh()
+
+    def clear_merge_highlights(self) -> None:
+        """Drop all merge highlights and repaint."""
+        if not self._merged_section_ids and not self._merged_entry_ids:
+            return
+        self._merged_section_ids.clear()
+        self._merged_entry_ids.clear()
+        self._refresh()
+
     def _refresh(self) -> None:
         self.clear()
         if self._doc is None:
@@ -130,6 +215,8 @@ class IniTreeWidget(QTreeWidget):
                 shadowed=id(sec) in dup_section_ids,
                 is_section=True,
             )
+            if id(sec) in self._merged_section_ids:
+                self._apply_merge_highlight(sec_item)
             entries = list(sec.entries)
             if self._sort_mode in (SortMode.KEYS_ALPHA, SortMode.SECTIONS_AND_KEYS_ALPHA):
                 entries = sorted(entries, key=lambda e: e.key.lower())
@@ -142,6 +229,8 @@ class IniTreeWidget(QTreeWidget):
                     shadowed=id(entry) in dup_entry_ids,
                     is_section=False,
                 )
+                if id(entry) in self._merged_entry_ids:
+                    self._apply_merge_highlight(entry_item)
             sec_item.setExpanded(True)
 
     def _collect_duplicate_ids(
@@ -228,6 +317,13 @@ class IniTreeWidget(QTreeWidget):
         item.setTextAlignment(col_count - 1, Qt.AlignmentFlag.AlignCenter)
         bg_brush = QBrush(bg)
         for c in range(col_count):
+            item.setBackground(c, bg_brush)
+            item.setToolTip(c, tooltip)
+
+    def _apply_merge_highlight(self, item: QTreeWidgetItem) -> None:
+        bg_brush = QBrush(self._MERGED_BG)
+        tooltip = self._t("merged_unsaved_tooltip")
+        for c in range(self.columnCount()):
             item.setBackground(c, bg_brush)
             item.setToolTip(c, tooltip)
 

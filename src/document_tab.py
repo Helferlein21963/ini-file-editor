@@ -11,7 +11,7 @@ from typing import Optional
 import re
 
 from PyQt6 import sip
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import (
     QBrush, QColor, QFont, QPalette, QTextCharFormat, QTextCursor, QTextFormat,
 )
@@ -142,6 +142,10 @@ class DocumentTab(QSplitter):
 
     @dirty.setter
     def dirty(self, value: bool) -> None:
+        # Saving the document clears the merge highlight: the green tint
+        # is meant to flag "added but not yet persisted" rows.
+        if self._dirty and not value:
+            self._tree.clear_merge_highlights()
         self._dirty = value
 
     @property
@@ -202,6 +206,9 @@ class DocumentTab(QSplitter):
         self._redo_stack.append(self._doc.clone())
         self._doc = self._undo_stack.pop()
         self._header_pristine = True
+        # Undo swaps in a cloned document; the old id()s in the merge
+        # highlight set would never match again, so drop them.
+        self._tree.clear_merge_highlights()
         self.load_into_ui()
         self._dirty = True
         self.content_changed.emit()
@@ -213,6 +220,7 @@ class DocumentTab(QSplitter):
         self._undo_stack.append(self._doc.clone())
         self._doc = self._redo_stack.pop()
         self._header_pristine = True
+        self._tree.clear_merge_highlights()
         self.load_into_ui()
         self._dirty = True
         self.content_changed.emit()
@@ -229,7 +237,15 @@ class DocumentTab(QSplitter):
         self._undo_stack.clear()
         self._redo_stack.clear()
         self._header_pristine = True
+        # Highlights from a previous document don't apply to the new one.
+        self._tree.clear_merge_highlights()
         self.load_into_ui()
+        # Auto-size the section/key and value columns so the user doesn't
+        # have to drag splitters on every file open. Only fires here (initial
+        # load); later refreshes from sort/format/undo keep the user's width.
+        # Deferred so the tree's viewport has been laid out — auto_size_columns
+        # uses viewport().width() to reserve room for the comment column.
+        QTimer.singleShot(0, self._tree.auto_size_columns)
 
     def load_into_ui(self) -> None:
         if self._doc is None:

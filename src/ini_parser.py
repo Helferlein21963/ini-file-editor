@@ -87,6 +87,21 @@ class DuplicateRecord:
 
 
 @dataclass
+class MergeResult:
+    """Records the additions made by :meth:`IniDocument.merge_from`.
+
+    Attributes:
+        new_sections: Sections appended wholesale to the target document.
+            All of their entries are implicitly new too.
+        new_entries: ``(parent_section, entry)`` pairs for entries that were
+            added to a section that already existed in the target.
+    """
+
+    new_sections: list["IniSection"] = field(default_factory=list)
+    new_entries: list[tuple["IniSection", "IniEntry"]] = field(default_factory=list)
+
+
+@dataclass
 class IniEntry:
     """A single ``key = value`` pair with attached comments.
 
@@ -247,7 +262,7 @@ class IniDocument:
         ]
         return doc
 
-    def merge_from(self, other: "IniDocument") -> None:
+    def merge_from(self, other: "IniDocument") -> "MergeResult":
         """Merge another document into ``self`` without overwriting existing keys.
 
         Sections that already exist gain only the entries whose keys are not
@@ -256,22 +271,35 @@ class IniDocument:
 
         Args:
             other: Document to merge in. ``other`` is not modified.
+
+        Returns:
+            A :class:`MergeResult` listing the section and entry instances that
+            were freshly appended to ``self``. The GUI uses this to highlight
+            merged rows until the user saves.
         """
+        result = MergeResult()
+
         if not self.header_comments and other.header_comments:
             self.header_comments = list(other.header_comments)
 
         for other_sec in other.sections:
             target_sec = self.get_section(other_sec.name)
             if target_sec is None:
-                self.sections.append(other_sec.clone())
+                new_sec = other_sec.clone()
+                self.sections.append(new_sec)
+                result.new_sections.append(new_sec)
                 continue
 
             for other_entry in other_sec.entries:
                 if target_sec.get_entry(other_entry.key) is None:
-                    target_sec.entries.append(other_entry.clone())
+                    new_entry = other_entry.clone()
+                    target_sec.entries.append(new_entry)
+                    result.new_entries.append((target_sec, new_entry))
 
         if not self.trailing_comments and other.trailing_comments:
             self.trailing_comments = list(other.trailing_comments)
+
+        return result
 
     # ------------------------------------------------------------------ #
     # Sorting

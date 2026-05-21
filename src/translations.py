@@ -133,6 +133,7 @@ TRANSLATIONS = {
         "status_duplicates": "{count} Duplikat(e) erkannt — betroffene Zeilen sind in Vorschau und Strukturansicht hervorgehoben.",
         "duplicate_tooltip": "Doppeltes Vorkommen — Win32-Anwendungen (GetPrivateProfileString) sehen nur den ersten Eintrag.",
         "duplicate_winner_tooltip": "Wirksamer Eintrag — Win32-Anwendungen (GetPrivateProfileString) sehen genau diesen Eintrag, nicht die rot markierten Duplikate.",
+        "merged_unsaved_tooltip": "Durch Zusammenführen hinzugefügt — Markierung verschwindet beim Speichern.",
     },
     Language.EN: {
         "app_name": "ini-file-editor",
@@ -246,6 +247,7 @@ TRANSLATIONS = {
         "duplicate_tooltip": "Duplicate occurrence — Win32 applications (GetPrivateProfileString) only see the first entry.",
         "duplicate_winner_tooltip": "Effective entry — Win32 applications (GetPrivateProfileString) see this entry, not the duplicates highlighted in red.",
         "duplicate_winner_tooltip": "Effective entry — Win32 applications (GetPrivateProfileString) see this one, not the duplicates highlighted in red.",
+        "merged_unsaved_tooltip": "Added by merge — highlight clears when the document is saved.",
     },
 }
 

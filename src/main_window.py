@@ -804,6 +804,8 @@ class MainWindow(QMainWindow):
             tab.load_document(IniDocument())
 
         merged = 0
+        new_section_ids: set[int] = set()
+        new_entry_ids: set[int] = set()
         n = len(paths)
         self._show_progress(0)
         for i, path in enumerate(paths):
@@ -822,7 +824,16 @@ class MainWindow(QMainWindow):
                 self._set_progress(file_start)
                 doc = IniParser.parse_file(path, progress_callback=make_cb(file_start, parse_span))
                 self._set_progress(file_start + parse_span)
-                tab.doc.merge_from(doc)
+                result = tab.doc.merge_from(doc)
+                # Track everything the merge appended so the tree can paint
+                # those rows green until the document is saved. A wholly new
+                # section implies all of its entries are new too.
+                for new_sec in result.new_sections:
+                    new_section_ids.add(id(new_sec))
+                    for entry in new_sec.entries:
+                        new_entry_ids.add(id(entry))
+                for _sec, new_entry in result.new_entries:
+                    new_entry_ids.add(id(new_entry))
                 self._warn_about_duplicates(doc, path)
                 self._set_progress(file_end)
                 merged += 1
@@ -834,6 +845,7 @@ class MainWindow(QMainWindow):
             return
 
         tab.load_into_ui()
+        tab.tree.add_merge_highlights(new_section_ids, new_entry_ids)
         tab.dirty = True
         idx = self._file_tabs.currentIndex()
         self._set_tab_title(idx, tab)

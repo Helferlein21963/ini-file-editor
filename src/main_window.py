@@ -874,8 +874,10 @@ class MainWindow(QMainWindow):
 
     def _write_ini(self, tab: DocumentTab, path: Path) -> None:
         try:
-            doc = tab.doc.sorted_copy(tab.sort_mode) if tab.sort_mode != SortMode.NONE else tab.doc
-            path.write_text(doc.to_ini_string(), encoding="utf-8")
+            # Save preserves the original formatting/order — the active sort
+            # mode is a display-only view and must not be persisted. To save
+            # a sorted file, the user must use Export.
+            path.write_text(tab.doc.to_ini_string(), encoding="utf-8")
             tab.doc.source_path = path
             tab.dirty = False
             idx = self._file_tabs.currentIndex()
